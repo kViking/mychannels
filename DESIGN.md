@@ -12,8 +12,15 @@ Two big features, two smaller fixes:
   from ErsatzTV. Removes upstream's `FavorKind`/`FavorStrength`.
 - **Filler system**: per-channel bumper/trailer pools with chain-fallback
   and auto-generated "Up Next" card for unfillable gaps.
-- **Save flow UX**: button state, spinner, fewer round-trips, honest
-  completion status.
+- **Save flow UX**: fewer round-trips (kept), cached RefreshGuide task id
+  (kept). Visible-progress attempts (button spinner, window.Loading
+  overlay, custom top-right toast) all produced no visible feedback in
+  the plugin-page context across v1.0.0.3-1.0.0.5 — the DOM
+  manipulations run without error but never paint. Rolled back to the
+  green-text-at-end pattern from upstream in v1.0.0.6, kept only the
+  round-trip cuts. Worth revisiting only with runtime inspection of
+  what's actually happening to DOM changes inside a Jellyfin plugin
+  config page container.
 - **Library-event cache invalidation**: hook `ItemAdded`/`Updated`/`Removed`
   so new content appears without waiting for the next guide refresh.
 

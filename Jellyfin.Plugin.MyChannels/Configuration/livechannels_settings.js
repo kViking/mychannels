@@ -23,45 +23,6 @@ export default function (view) {
 
     function el(id) { return view.querySelector('#' + id); }
 
-    // Toggles a fixed-position progress toast in the top-right of the page. Self-contained
-    // (creates its own DOM on first call). Duplicated across tab modules.
-    function showProgress(msg, isError) {
-        var toast = document.getElementById('mychProgressToast');
-        if (!toast) {
-            toast = document.createElement('div');
-            toast.id = 'mychProgressToast';
-            toast.className = 'mych-progress';
-            toast.innerHTML = '<div class="mych-progress-spinner" aria-hidden="true"></div><span class="mych-progress-text"></span>';
-            document.body.appendChild(toast);
-        }
-        toast.classList.remove('mych-progress-hidden');
-        toast.classList.toggle('mych-progress-error', !!isError);
-        toast.querySelector('.mych-progress-text').textContent = msg;
-    }
-    function hideProgress() {
-        var toast = document.getElementById('mychProgressToast');
-        if (toast) toast.classList.add('mych-progress-hidden');
-    }
-
-    function runAsync(btnId, statusId, workingMsg, doneMsg, failMsg, thunk) {
-        var btn = btnId ? el(btnId) : null;
-        if (btn) btn.disabled = true;
-        showProgress(workingMsg + '…', false);
-        Shared.setStatus(statusId, workingMsg + '…', false);
-        return Promise.resolve().then(thunk).then(function () {
-            if (btn) btn.disabled = false;
-            hideProgress();
-            Shared.setStatus(statusId, doneMsg, false);
-        }).catch(function (err) {
-            if (btn) btn.disabled = false;
-            var detail = err && (err.message || err.statusText || String(err));
-            var full = failMsg + (detail ? ' (' + detail + ')' : '');
-            showProgress(full, true);
-            setTimeout(hideProgress, 6000);
-            Shared.setStatus(statusId, full, true);
-        });
-    }
-
     // The display name for a stored language code, falling back to the code itself when cultures are unavailable.
     function cultureLabel(code) {
         for (var i = 0; i < cultures.length; i++) { if (cultures[i].key === code) return cultures[i].label; }
@@ -206,27 +167,26 @@ export default function (view) {
     }
 
     function saveSettings() {
-        // Settings tab reads fresh config first: it only sets a handful of scalar fields, so
-        // any concurrent channel edit on the other tab must be preserved (unlike the channels
-        // tab, which owns Channels wholesale). Trade-off is one round-trip, acceptable here.
-        runAsync('btnSaveSettings', 'settingsStatus', 'Saving', 'Saved.', 'Save failed.', function () {
-            return Shared.getConfig().then(function (fresh) {
-                fresh.TranscodeWidth = parseInt(el('resolution').value, 10) || 1280;
-                fresh.VideoCodec = el('videoCodec').value;
-                fresh.AudioCodec = el('audioCodec').value;
-                fresh.TranscodeVideoBitrateKbps = Math.max(500, parseInt(el('videoBitrate').value, 10) || 4000);
-                var maxSessions = parseInt(el('maxSessions').value, 10);
-                fresh.MaxConcurrentSessions = isNaN(maxSessions) ? 3 : Math.max(0, maxSessions);
-                var timeout = parseInt(el('sessionTimeout').value, 10);
-                fresh.SessionTimeoutMinutes = isNaN(timeout) ? 0 : Math.max(0, timeout);
-                fresh.StreamDirectory = (el('streamDirectory').value || '').trim();
-                fresh.DisableHardwareAcceleration = el('disableHwa').checked;
-                fresh.DefaultSubtitleLanguage = (langSelect ? langSelect.getValue() : '') || 'eng';
-                return Shared.saveConfig(fresh);
-            }).then(function () {
-                renderAcceleration();
-                return refreshGuide();
-            });
+        // Read the latest config so channel edits made on the other tab are preserved.
+        Shared.getConfig().then(function (fresh) {
+            fresh.TranscodeWidth = parseInt(el('resolution').value, 10) || 1280;
+            fresh.VideoCodec = el('videoCodec').value;
+            fresh.AudioCodec = el('audioCodec').value;
+            fresh.TranscodeVideoBitrateKbps = Math.max(500, parseInt(el('videoBitrate').value, 10) || 4000);
+            var maxSessions = parseInt(el('maxSessions').value, 10);
+            fresh.MaxConcurrentSessions = isNaN(maxSessions) ? 3 : Math.max(0, maxSessions);
+            var timeout = parseInt(el('sessionTimeout').value, 10);
+            fresh.SessionTimeoutMinutes = isNaN(timeout) ? 0 : Math.max(0, timeout);
+            fresh.StreamDirectory = (el('streamDirectory').value || '').trim();
+            fresh.DisableHardwareAcceleration = el('disableHwa').checked;
+            fresh.DefaultSubtitleLanguage = (langSelect ? langSelect.getValue() : '') || 'eng';
+            return Shared.saveConfig(fresh);
+        }).then(function () {
+            renderAcceleration();
+            refreshGuide();
+            Shared.setStatus('settingsStatus', 'Saved. Refreshing Live TV…', false);
+        }).catch(function () {
+            Shared.setStatus('settingsStatus', 'Save failed.', true);
         });
     }
 
@@ -234,10 +194,12 @@ export default function (view) {
     // The schedule is a pure projection of the channels, so a guide rebuild is a full reset: a stale schedule
     // (for example one still showing a now-excluded genre) is recreated fresh.
     function resetSchedule() {
-        runAsync('btnResetSchedule', 'resetStatus', 'Rebuilding schedule and guide',
-            'Done. The guide is rebuilding in the background.',
-            'Could not start the rebuild. Try again in a moment.',
-            refreshGuide);
+        Shared.setStatus('resetStatus', 'Rebuilding schedule and guide…', false);
+        refreshGuide().then(function () {
+            Shared.setStatus('resetStatus', 'Done. The guide is rebuilding in the background.', false);
+        }).catch(function () {
+            Shared.setStatus('resetStatus', 'Could not start the rebuild. Try again in a moment.', true);
+        });
     }
 
     // --- Stress test: measures how many concurrent streams the encoder sustains, using the production pipeline.

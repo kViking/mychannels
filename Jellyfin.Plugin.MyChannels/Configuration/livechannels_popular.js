@@ -24,45 +24,6 @@ export default function (view) {
 
     function el(id) { return view.querySelector('#' + id); }
 
-    // Toggles a fixed-position progress toast in the top-right of the page. Self-contained
-    // (creates its own DOM on first call). Duplicated across tab modules.
-    function showProgress(msg, isError) {
-        var toast = document.getElementById('mychProgressToast');
-        if (!toast) {
-            toast = document.createElement('div');
-            toast.id = 'mychProgressToast';
-            toast.className = 'mych-progress';
-            toast.innerHTML = '<div class="mych-progress-spinner" aria-hidden="true"></div><span class="mych-progress-text"></span>';
-            document.body.appendChild(toast);
-        }
-        toast.classList.remove('mych-progress-hidden');
-        toast.classList.toggle('mych-progress-error', !!isError);
-        toast.querySelector('.mych-progress-text').textContent = msg;
-    }
-    function hideProgress() {
-        var toast = document.getElementById('mychProgressToast');
-        if (toast) toast.classList.add('mych-progress-hidden');
-    }
-
-    function runAsync(btnId, statusId, workingMsg, doneMsg, failMsg, thunk) {
-        var btn = btnId ? el(btnId) : null;
-        if (btn) btn.disabled = true;
-        showProgress(workingMsg + '…', false);
-        Shared.setStatus(statusId, workingMsg + '…', false);
-        return Promise.resolve().then(thunk).then(function () {
-            if (btn) btn.disabled = false;
-            hideProgress();
-            Shared.setStatus(statusId, doneMsg, false);
-        }).catch(function (err) {
-            if (btn) btn.disabled = false;
-            var detail = err && (err.message || err.statusText || String(err));
-            var full = failMsg + (detail ? ' (' + detail + ')' : '');
-            showProgress(full, true);
-            setTimeout(hideProgress, 6000);
-            Shared.setStatus(statusId, full, true);
-        });
-    }
-
     // Populates the kids-rating dropdown and caches the rating options for the block editor.
     function loadRatings() {
         return ApiClient.getJSON(ApiClient.getUrl('Localization/ParentalRatings')).then(function (list) {
@@ -207,40 +168,40 @@ export default function (view) {
     }
 
     function savePopular() {
-        // Reads fresh config first: this tab only touches PopularChannel, and any concurrent
-        // channel/setting edit on another tab must be preserved. Trade-off is one round-trip,
-        // acceptable here.
-        runAsync('btnSavePopular', 'popularStatus', 'Saving', 'Saved.', 'Save failed.', function () {
-            return Shared.getConfig().then(function (fresh) {
-                var pc = fresh.PopularChannel || {};
-                pc.Enabled = el('popularEnabled').checked;
-                pc.Name = (el('popularName').value || '').trim() || 'Popular';
-                // The number and content are fixed; the logo always uses the symbol on this channel.
-                pc.Number = 0;
-                pc.LogoStyle = 'Symbol';
-                pc.LogoSymbol = (el('popularIcon').value || '').trim();
-                pc.LogoShowName = el('popularShowName').checked;
-                pc.SubtitleBurnIn = el('popularSubtitle').value;
-                // Blocks are mutated live on the cards; the transition window is read here. The blocks
-                // are authoritative, so neutralise the legacy single-band fields to keep them from
-                // double-applying.
-                pc.RatingBlocks = (popularConfig && popularConfig.RatingBlocks) || [];
-                pc.TransitionWindowMinutes = Math.max(0, parseInt(el('popularTransitionWindow').value, 10) || 0);
-                pc.MinOfficialRating = '';
-                pc.MaxOfficialRating = '';
-                pc.IncludeUnrated = true;
-                pc.Category = el('popularCategory').value;
-                pc.EpisodesPerBlock = Math.max(1, parseInt(el('popularEpisodesPerBlock').value, 10) || 1);
-                pc.ShuffleEpisodes = el('popularEpisodeOrder').value === 'random';
-                pc.KeepMultiPartTogether = el('popularKeepMultiPart').checked;
-                pc.IncludeEpisodes = el('popularIncludeEpisodes').checked;
-                pc.IncludeMovies = el('popularIncludeMovies').checked;
-                pc.IncludeSpecials = el('popularIncludeSpecials').checked;
-                pc.LoopMode = el('popularLoopMode').value;
-                pc.Shuffle = pc.LoopMode === 'Shuffle';
-                fresh.PopularChannel = pc;
-                return Shared.saveConfig(fresh);
-            }).then(refreshGuide);
+        // Read the latest config so settings on the other tabs are preserved, then update just the popular channel.
+        Shared.getConfig().then(function (fresh) {
+            var pc = fresh.PopularChannel || {};
+            pc.Enabled = el('popularEnabled').checked;
+            pc.Name = (el('popularName').value || '').trim() || 'Popular';
+            // The number and content are fixed; the logo always uses the symbol on this channel.
+            pc.Number = 0;
+            pc.LogoStyle = 'Symbol';
+            pc.LogoSymbol = (el('popularIcon').value || '').trim();
+            pc.LogoShowName = el('popularShowName').checked;
+            pc.SubtitleBurnIn = el('popularSubtitle').value;
+            // Blocks are mutated live on the cards; the transition window is read here. The blocks are authoritative,
+            // so neutralise the legacy single-band fields to keep them from double-applying.
+            pc.RatingBlocks = (popularConfig && popularConfig.RatingBlocks) || [];
+            pc.TransitionWindowMinutes = Math.max(0, parseInt(el('popularTransitionWindow').value, 10) || 0);
+            pc.MinOfficialRating = '';
+            pc.MaxOfficialRating = '';
+            pc.IncludeUnrated = true;
+            pc.Category = el('popularCategory').value;
+            pc.EpisodesPerBlock = Math.max(1, parseInt(el('popularEpisodesPerBlock').value, 10) || 1);
+            pc.ShuffleEpisodes = el('popularEpisodeOrder').value === 'random';
+            pc.KeepMultiPartTogether = el('popularKeepMultiPart').checked;
+            pc.IncludeEpisodes = el('popularIncludeEpisodes').checked;
+            pc.IncludeMovies = el('popularIncludeMovies').checked;
+            pc.IncludeSpecials = el('popularIncludeSpecials').checked;
+            pc.LoopMode = el('popularLoopMode').value;
+            pc.Shuffle = pc.LoopMode === 'Shuffle';
+            fresh.PopularChannel = pc;
+            return Shared.saveConfig(fresh);
+        }).then(function () {
+            refreshGuide();
+            Shared.setStatus('popularStatus', 'Saved. Refreshing Live TV…', false);
+        }).catch(function () {
+            Shared.setStatus('popularStatus', 'Save failed.', true);
         });
     }
 

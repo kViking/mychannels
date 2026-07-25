@@ -37,52 +37,6 @@ export default function (view) {
 
     function el(id) { return view.querySelector('#' + id); }
 
-    // Toggles a fixed-position progress toast in the top-right of the page. Self-contained
-    // (creates its own DOM on first call) so it doesn't depend on any Jellyfin global or
-    // the plugin HTML having a specific placeholder; styles come from the plugin config
-    // page's own <style> block.
-    function showProgress(msg, isError) {
-        var toast = document.getElementById('mychProgressToast');
-        if (!toast) {
-            toast = document.createElement('div');
-            toast.id = 'mychProgressToast';
-            toast.className = 'mych-progress';
-            toast.innerHTML = '<div class="mych-progress-spinner" aria-hidden="true"></div><span class="mych-progress-text"></span>';
-            document.body.appendChild(toast);
-        }
-        toast.classList.remove('mych-progress-hidden');
-        toast.classList.toggle('mych-progress-error', !!isError);
-        toast.querySelector('.mych-progress-text').textContent = msg;
-    }
-    function hideProgress() {
-        var toast = document.getElementById('mychProgressToast');
-        if (toast) toast.classList.add('mych-progress-hidden');
-    }
-
-    // Wraps a long async action in visible progress feedback: pops a top-right progress
-    // toast with a spinner, disables the trigger button to prevent double-clicks, sets
-    // a live status line, then reports real success or failure with the returned error
-    // surfaced. Without this, save/import/delete on a large channel setup leaves the UI
-    // frozen-looking for 5-10 seconds while three serial round-trips complete.
-    function runAsync(btnId, statusId, workingMsg, doneMsg, failMsg, thunk) {
-        var btn = btnId ? el(btnId) : null;
-        if (btn) btn.disabled = true;
-        showProgress(workingMsg + '…', false);
-        Shared.setStatus(statusId, workingMsg + '…', false);
-        return Promise.resolve().then(thunk).then(function () {
-            if (btn) btn.disabled = false;
-            hideProgress();
-            Shared.setStatus(statusId, doneMsg, false);
-        }).catch(function (err) {
-            if (btn) btn.disabled = false;
-            var detail = err && (err.message || err.statusText || String(err));
-            var full = failMsg + (detail ? ' (' + detail + ')' : '');
-            showProgress(full, true);
-            setTimeout(hideProgress, 6000);
-            Shared.setStatus(statusId, full, true);
-        });
-    }
-
     // Parses the Years field into a sorted, de-duplicated list of production years. Accepts individual years and
     // ranges (e.g. "1990-1999, 2005" or "1990 1991 1992"), so a decade is two keystrokes rather than ten entries.
     // Anything outside a sane 1850-2200 band is dropped.
@@ -1145,7 +1099,7 @@ export default function (view) {
         if (!ch.Name) { Shared.setStatus('channelStatus', 'A name is required.', true); return; }
         if (!ch.Sources.length) { Shared.setStatus('channelStatus', 'Add at least one library source.', true); return; }
         if (ch.Sources.some(function (s) { return s.Kind === 'Collection' ? !s.CollectionId : !s.LibraryId; })) { Shared.setStatus('channelStatus', 'Pick a library or collection for each source.', true); return; }
-        persist('btnSaveChannel', 'channelStatus', 'Saved.', 'Save failed.');
+        persist('channelStatus', 'Saved.', 'Save failed.');
     }
 
     function stripInternal(list) {
@@ -1177,22 +1131,20 @@ export default function (view) {
         });
     }
 
-    // The save + refresh chain, returned as a promise so multiple entry points (save, import,
-    // delete) can share it. Uses the in-memory config as the base rather than re-fetching
-    // Shared.getConfig() first — trades multi-tab safety (a settings edit in another browser
-    // tab since page load would be clobbered) for one fewer round-trip. Single-admin homelab
-    // is the norm, so the trade is acceptable.
-    function persistInternal() {
+    // Save + fire-and-forget refresh. Uses the in-memory config as the base rather than
+    // re-fetching Shared.getConfig() first — trades multi-tab safety (a settings edit in
+    // another browser tab since page load would be clobbered) for one fewer round-trip.
+    // Single-admin homelab is the norm, so the trade is acceptable.
+    function persist(statusId, okMessage, errMessage) {
         var fresh = Object.assign({}, config, { Channels: stripInternal(channels) });
         config = fresh;
         return Shared.saveConfig(fresh).then(function () {
             renderSelect();
-            return refreshLiveTv();
+            refreshLiveTv();
+            Shared.setStatus(statusId, okMessage + ' Refreshing Live TV…', false);
+        }).catch(function () {
+            Shared.setStatus(statusId, errMessage, true);
         });
-    }
-
-    function persist(btnId, statusId, okMessage, errMessage) {
-        return runAsync(btnId, statusId, 'Saving', okMessage, errMessage, persistInternal);
     }
 
     function nextNumber() {
@@ -1278,13 +1230,9 @@ export default function (view) {
         });
 
         currentIndex = channels.length ? 0 : -1;
-        // Resolve item names for any hand-picked sources so the editor reads cleanly, then save + refresh
-        // Live TV. Wrapped in runAsync so the whole chain (hydrate is a network call across every channel's
-        // sources, and can take several seconds on a large setup) shows progress instead of silent waiting.
-        var doneMsg = 'Imported ' + clean.length + ' channel' + (clean.length === 1 ? '' : 's')
-            + ' (' + added + ' added, ' + replaced + ' replaced).';
-        runAsync('btnImportChannels', 'ioStatus', 'Importing', doneMsg, 'Import failed to save.', function () {
-            return hydrateItemNames().then(persistInternal);
+        // Resolve item names for any hand-picked sources so the editor reads cleanly, then save + refresh Live TV.
+        hydrateItemNames().then(function () {
+            persist('ioStatus', 'Imported ' + clean.length + ' channel' + (clean.length === 1 ? '' : 's') + ' (' + added + ' added, ' + replaced + ' replaced).', 'Import failed to save.');
         });
     }
 
@@ -1318,7 +1266,7 @@ export default function (view) {
         if (!window.confirm('Delete channel "' + (ch.Name || 'this channel') + '"? This cannot be undone.')) return;
         channels.splice(currentIndex, 1);
         currentIndex = -1;
-        persist('btnDeleteChannel', 'channelStatus', 'Deleted.', 'Delete failed.');
+        persist('channelStatus', 'Deleted.', 'Delete failed.');
     }
 
     function addLibrary() {

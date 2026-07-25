@@ -2,26 +2,6 @@
      class="page type-interior pluginConfigurationPage withTabs"
      data-require="emby-input,emby-button,emby-checkbox,emby-select"
      data-controller="__plugin/livechannels_popular.js">
-    <style>
-        @keyframes mych-spin { to { transform: rotate(360deg); } }
-        .mych-progress {
-            position: fixed; top: 1em; right: 1em; z-index: 9999;
-            display: flex; align-items: center; gap: 0.7em;
-            padding: 0.9em 1.2em; border-radius: 8px;
-            background: rgba(0, 0, 0, 0.85); color: #fff;
-            font-size: 1em; box-shadow: 0 6px 24px rgba(0,0,0,0.4);
-            max-width: 90vw;
-        }
-        .mych-progress-hidden { display: none; }
-        .mych-progress-spinner {
-            width: 1.2em; height: 1.2em; flex-shrink: 0;
-            border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff;
-            border-radius: 50%;
-            animation: mych-spin 0.9s linear infinite;
-        }
-        .mych-progress-error { background: rgba(150, 30, 30, 0.9); }
-        .mych-progress-error .mych-progress-spinner { display: none; }
-    </style>
     <div data-role="content">
         <div class="content-primary">
             <form id="LiveChannelsPopularForm">
