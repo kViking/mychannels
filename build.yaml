@@ -1,7 +1,7 @@
 ---
 name: "MyChannels"
 guid: "65679cc2-98ed-419b-bc2c-b0110ffc0394"
-version: "1.0.0.3"
+version: "1.0.0.4"
 targetAbi: "10.11.9.0"
 framework: "net9.0"
 overview: "Fork of JPKribs Live Channels with an expanded scheduling model and filler support."
@@ -17,4 +17,4 @@ artifacts:
 - "Jellyfin.Plugin.MyChannels.dll"
 changelog:
   developer:
-  - Save-flow UX pass. Save, Import, Delete, Save Popular, Save Settings, and Rebuild Schedule now disable their trigger button, show a spinner, and surface real success/failure with the error message when things break — no more 5-10 seconds of silent frozen UI. Cached the RefreshGuide task id so save flows skip a task-enumeration round-trip. The channels tab now saves from its in-memory config instead of re-fetching first, cutting another round-trip (trade-off documented in the code: single-admin homelab only).
+  - Use Jellyfin's built-in Loading spinner overlay for the save-flow progress feedback. The v1.0.0.3 button-innerHTML approach was invisible in practice (the custom-element polyfill treats customized buttons in a way that made the swap silently no-op); window.Loading.show/hide is the supported pattern every legacy Jellyfin controller uses and shows a proper full-screen spinner.

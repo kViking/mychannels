@@ -37,25 +37,25 @@ export default function (view) {
 
     function el(id) { return view.querySelector('#' + id); }
 
-    // Wraps a long async action in visible progress feedback: disables the trigger button,
-    // swaps its label for a spinner + working message, sets a live status line, then reports
-    // real success or failure with the returned error surfaced. Without this, save/import/
-    // delete on a large channel setup leaves the UI frozen-looking for 5-10 seconds while
-    // three serial round-trips complete.
+    // Wraps a long async action in visible progress feedback: pops Jellyfin's full-screen
+    // Loading spinner overlay (the same one every dashboard page uses via window.Loading,
+    // registered by main.jellyfin.bundle.js), disables the trigger button to prevent
+    // double-clicks, sets a live status line, then reports real success or failure with
+    // the returned error surfaced. Without this, save/import/delete on a large channel
+    // setup leaves the UI frozen-looking for 5-10 seconds while three serial round-trips
+    // complete.
     function runAsync(btnId, statusId, workingMsg, doneMsg, failMsg, thunk) {
         var btn = btnId ? el(btnId) : null;
-        var originalHtml = btn ? btn.innerHTML : null;
-        if (btn) {
-            btn.disabled = true;
-            btn.classList.add('mych-btn-working');
-            btn.innerHTML = '<span class="material-icons mych-spin" aria-hidden="true">progress_activity</span><span>' + workingMsg + '…</span>';
-        }
+        if (btn) btn.disabled = true;
+        if (window.Loading) window.Loading.show();
         Shared.setStatus(statusId, workingMsg + '…', false);
         return Promise.resolve().then(thunk).then(function () {
-            if (btn) { btn.disabled = false; btn.classList.remove('mych-btn-working'); btn.innerHTML = originalHtml; }
+            if (btn) btn.disabled = false;
+            if (window.Loading) window.Loading.hide();
             Shared.setStatus(statusId, doneMsg, false);
         }).catch(function (err) {
-            if (btn) { btn.disabled = false; btn.classList.remove('mych-btn-working'); btn.innerHTML = originalHtml; }
+            if (btn) btn.disabled = false;
+            if (window.Loading) window.Loading.hide();
             var detail = err && (err.message || err.statusText || String(err));
             Shared.setStatus(statusId, failMsg + (detail ? ' (' + detail + ')' : ''), true);
         });
