@@ -7,6 +7,15 @@
     "imageUrl": "https://raw.githubusercontent.com/kViking/mychannels/master/Jellyfin.Plugin.MyChannels/Assets/Logo.png",
     "owner": "kViking",
     "category": "LiveTV",
-    "versions": []
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "Initial fork release.\n\nForked from JPKribs/jellyfin-plugin-livechannels v10.11.12.1 with:\n\n- **JS import subpath fix** — the plugin's config-page dynamic imports were\n  using an absolute  path that broke on subpath\n  deployments (). Changed to \n  to resolve relative to the config page URL.\n\nFeature work per DESIGN.md follows in subsequent releases:\n\n- Per-entry weight + block size with layered defaults\n- Weighted round-robin scheduling (algorithm ported from ErsatzTV)\n- Filler pools for bumpers/trailers + auto-generated Up Next card\n- Improved save-flow UX (button state, fewer round-trips)\n- Library-event cache invalidation",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/JPKribs/jellyfin-plugin-livechannels/releases/download/v1.0.0.0/jellyfin-plugin-livechannels-1.0.0.0.zip",
+        "checksum": "9d1ead73e678fa2f51a70a933b0bf017",
+        "timestamp": "2026-07-25T21:24:55Z"
+      }
+    ]
   }
 ]
