@@ -50,7 +50,7 @@ get_plugin_version() {
 get_plugin_info() {
     local build_file="build.yaml"
     local name="Live Channels"
-    local guid="ac6940fb-aac6-4de8-b622-55a662e23658"
+    local guid="65679cc2-98ed-419b-bc2c-b0110ffc0394"
 
     if [[ -f "$build_file" ]]; then
         local extracted_name=$(grep '^name:' "$build_file" | cut -d':' -f2 | tr -d ' "')
