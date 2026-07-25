@@ -200,7 +200,9 @@ public partial class ChannelService
                 continue;
             }
 
-            var entry = ToEntry(item, SafeGetMediaStreams(item.Id));
+            // Popular channel is exempt from per-entry overrides: it has no user-configurable sources, so there's
+            // nothing to override against. Every entry falls to the default weight/block-size via an empty lookup.
+            var entry = ToEntry(item, SafeGetMediaStreams(item.Id), EmptyOverrideLookup);
             if (entry is not null)
             {
                 entries.Add(entry);
@@ -208,17 +210,16 @@ public partial class ChannelService
         }
 
         var options = new ChannelLoopOptions(
-            channel.EpisodesPerBlock,
             channel.KeepMultiPartTogether,
             channel.EffectiveLoopMode(),
             channel.ShuffleEpisodes,
             PopularChannelId,
-            channel.FavorKind,
-            channel.FavorStrength,
             LoopRotation());
 
         return ProgramLoopBuilder.Build(entries, options);
     }
+
+    private static readonly IReadOnlyDictionary<Guid, EntryOverride> EmptyOverrideLookup = new Dictionary<Guid, EntryOverride>();
 
     /// <summary>
     /// Fills ordered buckets up to their quotas from candidate id lists, de-duplicating across buckets: an id

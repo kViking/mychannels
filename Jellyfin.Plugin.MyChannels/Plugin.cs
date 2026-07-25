@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Jellyfin.Plugin.MyChannels.Configuration;
+using Jellyfin.Plugin.MyChannels.Models;
 using Jellyfin.Plugin.MyChannels.Services;
 using JPKribs.Jellyfin.Base;
 using MediaBrowser.Common.Configuration;
@@ -43,7 +44,24 @@ public class Plugin : PluginBase<Plugin, PluginConfiguration>
             return true;
         });
 
-        logger.LogInformation("Live Channels plugin initialized");
+        // v1.1.0.0 deprecates FavorKind/FavorStrength/EpisodesPerBlock in favour of per-entry
+        // EntryOverrides. Log a warning per channel that still has a favor setting from the pre-v1.1 model so
+        // the user knows their intent isn't being applied and can set per-entry weights instead. Synthesising
+        // equivalent overrides automatically would need library queries that aren't safely available during
+        // plugin construction, so we surface the deprecation and leave the setting to the user.
+        foreach (var channel in ReadConfiguration(c => new List<Channel>(c.Channels)))
+        {
+            if (channel.FavorKind != FavorKind.None && channel.EntryOverrides.Count == 0)
+            {
+                logger.LogWarning(
+                    "MyChannels: channel '{Name}' still has the deprecated FavorKind={FavorKind}/FavorStrength={Strength} setting. Ignored by the v1.1 scheduler; set per-entry Weight in the Content Weights section instead.",
+                    channel.Name,
+                    channel.FavorKind,
+                    channel.FavorStrength);
+            }
+        }
+
+        logger.LogInformation("MyChannels plugin initialized");
     }
 
     private readonly IApplicationPaths _applicationPaths;

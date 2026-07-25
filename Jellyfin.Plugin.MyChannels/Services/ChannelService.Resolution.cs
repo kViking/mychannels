@@ -115,6 +115,111 @@ public partial class ChannelService
     }
 
     /// <summary>
+    /// Enumerates the "top-level" items resolved from a channel's sources, WITHOUT expanding series to their
+    /// episodes. For a Library source with a Genre or AllContent selection, episodes returned by the library
+    /// query are rolled up to their parent series (so a series appears once, not as N episodes). For Whitelist
+    /// or Collection sources, the source's directly-referenced items are returned as-is (Series stay as Series).
+    /// Deduplicated across sources by id.
+    /// </summary>
+    /// <remarks>
+    /// Read-only: safe to run concurrently with a guide refresh. Used by the Content Weights editor and the
+    /// legacy-FavorKind deprecation logger. Applies the same rating and kind filters as <see cref="BuildPrograms"/>,
+    /// but skips audio-language filtering (which needs a representative episode's media streams and is not worth
+    /// the cost at series level).
+    /// </remarks>
+    /// <param name="channel">The channel whose sources to enumerate.</param>
+    /// <returns>The channel's top-level items, in source-iteration order, deduplicated.</returns>
+    public IEnumerable<BaseItem> EnumerateTopLevelItems(Channel channel)
+    {
+        if (channel is null || channel.Sources is null)
+        {
+            yield break;
+        }
+
+        var ratingBlocks = ResolveRatingBlocks(channel);
+        var ratings = HasTimeOfDayRating(ratingBlocks)
+            ? new RatingFilter(null, null, true)
+            : EffectiveSingleBandFilter(ratingBlocks);
+        var kinds = BuildKinds(channel);
+        if (kinds.Length == 0)
+        {
+            yield break;
+        }
+
+        var seen = new HashSet<Guid>();
+        foreach (var source in channel.Sources)
+        {
+            IEnumerable<BaseItem> raw;
+            if (source.Kind == SourceKind.Collection)
+            {
+                if (!Guid.TryParse(source.CollectionId, out var boxId)
+                    || _libraryManager.GetItemById(boxId) is not BoxSet box)
+                {
+                    continue;
+                }
+
+                raw = box.GetLinkedChildren();
+            }
+            else
+            {
+                if (string.IsNullOrEmpty(source.LibraryId) || !Guid.TryParse(source.LibraryId, out var libraryId))
+                {
+                    continue;
+                }
+
+                if (source.Selection == SelectionMode.Whitelist)
+                {
+                    raw = source.ItemIds
+                        .Select(id => _libraryManager.GetItemById(id))
+                        .Where(i => i is not null)!;
+                }
+                else
+                {
+                    // Reuse the same resolver BuildPrograms uses so the two stay in sync, then roll episodes up
+                    // to their parent series.
+                    raw = RollupToTopLevel(ResolveSource(source, libraryId, ratings, kinds));
+                }
+            }
+
+            foreach (var item in raw)
+            {
+                if (item is null || !seen.Add(item.Id))
+                {
+                    continue;
+                }
+
+                yield return item;
+            }
+        }
+    }
+
+    // Rolls a resolved item list up to top-level entities: an Episode collapses to its Series (fetched once),
+    // any other item is returned as itself. Deduplicated within this rollup so a series with many resolved
+    // episodes appears once.
+    private IEnumerable<BaseItem> RollupToTopLevel(IEnumerable<BaseItem> items)
+    {
+        var seen = new HashSet<Guid>();
+        foreach (var item in items)
+        {
+            if (item is Episode ep && ep.SeriesId != Guid.Empty)
+            {
+                if (seen.Add(ep.SeriesId))
+                {
+                    var series = _libraryManager.GetItemById(ep.SeriesId);
+                    if (series is not null)
+                    {
+                        yield return series;
+                    }
+                }
+            }
+            else if (seen.Add(item.Id))
+            {
+                yield return item;
+            }
+        }
+    }
+
+    /// <summary>
     /// Resolves a channel's items into the ordered, schedulable loop it cycles through. Content is the union
     /// of every library source; items without a playable file or a positive runtime are dropped because they
     /// cannot be placed on the timeline.
@@ -181,6 +286,13 @@ public partial class ChannelService
             ? ResolvePeopleAllowed(channel.People, filterScope, kinds)
             : null;
 
+        // Fold the sparse EntryOverrides list into a lookup keyed by item id (a series/movie/etc. top-level id).
+        // Absent ids default to weight=1, blockSize=1 downstream.
+        var overridesByItemId = channel.EntryOverrides
+            .Where(o => o.ItemId != Guid.Empty)
+            .GroupBy(o => o.ItemId)
+            .ToDictionary(g => g.Key, g => g.First());
+
         var entries = new List<ProgramEntry>();
         foreach (var item in byId.Values)
         {
@@ -213,7 +325,7 @@ public partial class ChannelService
                 continue;
             }
 
-            var entry = ToEntry(item, streams);
+            var entry = ToEntry(item, streams, overridesByItemId);
             if (entry is not null)
             {
                 entries.Add(entry);
@@ -221,13 +333,10 @@ public partial class ChannelService
         }
 
         var options = new ChannelLoopOptions(
-            channel.EpisodesPerBlock,
             channel.KeepMultiPartTogether,
             channel.EffectiveLoopMode(),
             channel.ShuffleEpisodes,
             channel.Id,
-            channel.FavorKind,
-            channel.FavorStrength,
             LoopRotation());
 
         return ProgramLoopBuilder.Build(entries, options);
@@ -488,7 +597,7 @@ public partial class ChannelService
         return allowed;
     }
 
-    private ProgramEntry? ToEntry(BaseItem? item, IReadOnlyList<MediaStream> streams)
+    private ProgramEntry? ToEntry(BaseItem? item, IReadOnlyList<MediaStream> streams, IReadOnlyDictionary<Guid, EntryOverride> overridesByItemId)
     {
         if (item is null)
         {
@@ -524,6 +633,14 @@ public partial class ChannelService
 
         var defaultAudio = DefaultAudio(streams);
 
+        // Top-level id = the user-visible entity this item belongs to. For an episode that's its series; for a
+        // movie/music-video/loose-video, it's the item itself. Every entry that shares a top-level id shares its
+        // (Weight, BlockSize) override — that's how a per-series weight applies to all the series' episodes.
+        var topLevelId = seriesId ?? item.Id;
+        overridesByItemId.TryGetValue(topLevelId, out var ov);
+        var weight = ov?.Weight ?? 1;
+        var blockSize = ov?.BlockSize ?? 1;
+
         return new ProgramEntry(item.Id, title, item.Overview, ticks, item.Path)
         {
             Year = item.ProductionYear,
@@ -544,7 +661,10 @@ public partial class ChannelService
             IsHdr = ComputeIsHdr(video),
             DefaultAudioOrdinal = defaultAudio?.Ordinal ?? 0,
             DefaultAudioLanguage = defaultAudio?.Stream.Language,
-            Subtitles = BuildSubtitleInfos(streams)
+            Subtitles = BuildSubtitleInfos(streams),
+            TopLevelItemId = topLevelId,
+            Weight = Math.Max(1, weight),
+            BlockSize = Math.Max(1, blockSize)
         };
     }
 

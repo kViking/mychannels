@@ -72,8 +72,11 @@ public class Channel
     /// <summary>Gets or sets the people (actors, directors, …) a channel is limited to. Empty means everyone; otherwise only items one of these people appears in are included. Matched by Jellyfin person id.</summary>
     public List<PersonRef> People { get; set; } = new();
 
-    /// <summary>Gets or sets how many consecutive episodes of a series to play as a block before moving on. 1 disables grouping.</summary>
+    /// <summary>Gets or sets how many consecutive episodes of a series to play as a block before moving on. Deprecated in v1.1.0.0 in favour of per-entry <see cref="EntryOverride.BlockSize"/>; scheduler ignores this field. Kept for one release to preserve XML round-trip for downgrade; removed in a followup.</summary>
     public int EpisodesPerBlock { get; set; } = 1;
+
+    /// <summary>Gets or sets the per-top-level-item scheduling overrides. Sparse: only ids the user has tweaked appear. Absent items default to weight 1 and block size 1. See <see cref="EntryOverride"/>.</summary>
+    public List<EntryOverride> EntryOverrides { get; set; } = new();
 
     /// <summary>Gets or sets a value indicating whether multi-part episodes (e.g. "… (1)" / "… (2)") are kept adjacent and never split across a block boundary.</summary>
     public bool KeepMultiPartTogether { get; set; } = true;
@@ -102,10 +105,10 @@ public class Channel
     /// <summary>Gets or sets a value indicating whether episodes within a series are shuffled rather than played in air order.</summary>
     public bool ShuffleEpisodes { get; set; }
 
-    /// <summary>Gets or sets the content type the channel weights more heavily in its (shuffled) loop, or <see cref="Models.FavorKind.None"/>.</summary>
+    /// <summary>Gets or sets the content type the channel weights more heavily in its (shuffled) loop, or <see cref="Models.FavorKind.None"/>. Deprecated in v1.1.0.0 in favour of per-entry <see cref="EntryOverride.Weight"/>; scheduler ignores this field. A one-time startup migration in Plugin.cs synthesises equivalent EntryOverrides from any legacy non-None value.</summary>
     public FavorKind FavorKind { get; set; } = FavorKind.None;
 
-    /// <summary>Gets or sets how strongly <see cref="FavorKind"/> is favoured.</summary>
+    /// <summary>Gets or sets how strongly <see cref="FavorKind"/> is favoured. Deprecated in v1.1.0.0 alongside FavorKind; see notes there.</summary>
     public FavorStrength FavorStrength { get; set; } = FavorStrength.Moderate;
 
     /// <summary>

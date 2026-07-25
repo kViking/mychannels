@@ -8,6 +8,17 @@
             src: url('configurationpage?name=livechannels_symbols.ttf') format('truetype');
             font-display: swap;
         }
+        .jpk-entry-overrides { display: flex; flex-direction: column; gap: 0.5em; margin-top: 1em; }
+        .mych-eo-row { display: flex; align-items: center; gap: 0.75em; padding: 0.4em 0.6em; border-radius: 4px; background: rgba(255,255,255,0.03); }
+        .mych-eo-row:hover { background: rgba(255,255,255,0.06); }
+        .mych-eo-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .mych-eo-kind { opacity: 0.6; font-size: 0.85em; margin-left: 0.5em; }
+        .mych-eo-input { width: 4.5em; flex-shrink: 0; }
+        .mych-eo-input-label { opacity: 0.7; font-size: 0.85em; margin-right: 0.25em; }
+        .mych-eo-empty { opacity: 0.7; padding: 1em 0; font-style: italic; }
+        .mych-eo-orphans { margin-top: 1.5em; padding-top: 1em; border-top: 1px solid rgba(255,255,255,0.1); opacity: 0.75; font-size: 0.9em; }
+        .mych-eo-orphan-row { display: flex; align-items: center; gap: 0.5em; padding: 0.2em 0; font-family: monospace; font-size: 0.85em; }
+        .mych-eo-orphan-remove { color: #f88; cursor: pointer; text-decoration: underline; }
     </style>
     <div data-role="content">
         <div class="content-primary">
@@ -216,11 +227,6 @@
                                     <div class="fieldDescription">Tags the whole channel in the guide. Kids is set per rating block, and the movie tag is applied automatically while a movie is playing.</div>
                                 </div>
                                 <h3 class="jpk-subsection-title">Episodes</h3>
-                                <div class="inputContainer">
-                                    <label for="episodesPerBlock">Episodes per block</label>
-                                    <input is="emby-input" type="number" id="episodesPerBlock" min="1" step="1" autocomplete="off" />
-                                    <div class="fieldDescription">Consecutive episodes per series before moving on. 1 disables grouping.</div>
-                                </div>
                                 <div class="selectContainer">
                                     <label class="selectLabel" for="episodeOrder">Episode order</label>
                                     <select id="episodeOrder" class="jpk-selector-dropdown">
@@ -279,28 +285,24 @@
                                     </select>
                                     <div class="fieldDescription">How the channel arranges its content. Chronological plays oldest to newest by release date.</div>
                                 </div>
-                                <div id="favorGroup" class="hidden">
-                                    <div class="selectContainer">
-                                        <label class="selectLabel" for="favorKind">Favor content type</label>
-                                        <select id="favorKind" class="jpk-selector-dropdown">
-                                            <option value="None">No preference</option>
-                                            <option value="Movies">Movies</option>
-                                            <option value="Shows">Shows</option>
-                                            <option value="MusicVideos">Music videos</option>
-                                        </select>
-                                        <div class="fieldDescription">Weights one type more heavily in the loop, repeating it to fill the share if needed.</div>
-                                    </div>
-                                    <div id="favorStrengthGroup" class="jpk-indent hidden">
-                                        <div class="selectContainer">
-                                            <label class="selectLabel" for="favorStrength">Favor strength</label>
-                                            <select id="favorStrength" class="jpk-selector-dropdown">
-                                                <option value="Slight">Slight</option>
-                                                <option value="Moderate">Moderate</option>
-                                                <option value="Heavy">Heavy</option>
-                                            </select>
-                                        </div>
-                                    </div>
+                            </div>
+                        </div>
+
+                        <!-- Content weights: per-top-level-item Weight and BlockSize overrides. Rows populated
+                             from a POST to /livechannels/channels/resolve-top-level. Sparse: only tweaked rows
+                             are persisted to Channel.EntryOverrides. -->
+                        <div class="jpk-section jpk-collapsible" id="sectionEntryOverrides">
+                            <button is="emby-button" type="button" class="jpk-collapsible-header raised block">
+                                <span class="material-icons expand-icon" aria-hidden="true">chevron_right</span>
+                                <span>Content weights</span>
+                            </button>
+                            <div class="jpk-collapsible-body">
+                                <div class="fieldDescription">
+                                    Per-item weight and block size for the channel's top-level items (series, movies, collections).
+                                    Weight controls how often the item plays (default 1). Block size sets how many consecutive episodes of a series air together (default 1).
+                                    Blank rows use the default; only tweaked rows are saved.
                                 </div>
+                                <div id="entryOverridesList" class="jpk-entry-overrides"></div>
                             </div>
                         </div>
 

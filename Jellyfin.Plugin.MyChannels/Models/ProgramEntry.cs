@@ -95,6 +95,15 @@ public sealed class ProgramEntry
 
     /// <summary>Gets the item's subtitle streams (in index order), enough to pick a burn-in track without re-reading the media streams at tune-in.</summary>
     public IReadOnlyList<SubtitleStreamInfo> Subtitles { get; init; } = Array.Empty<SubtitleStreamInfo>();
+
+    /// <summary>Gets the id of the top-level item this entry was resolved from (a series, movie, season, collection, etc. — whatever the source treats as a single unit). Used by the loop builder to group items sharing a weight/block-size override.</summary>
+    public Guid TopLevelItemId { get; init; }
+
+    /// <summary>Gets how many round-robin slots this entry's top-level group claims per rotation. Populated at resolve time from <see cref="Channel.EntryOverrides"/>; defaults to 1.</summary>
+    public int Weight { get; init; } = 1;
+
+    /// <summary>Gets the block size in episodes when this entry is part of a series/season. Only meaningful for episodes; ignored for standalone items. Populated at resolve time from <see cref="Channel.EntryOverrides"/>; defaults to 1.</summary>
+    public int BlockSize { get; init; } = 1;
 }
 
 /// <summary>

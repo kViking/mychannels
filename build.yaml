@@ -1,7 +1,7 @@
 ---
 name: "MyChannels"
 guid: "65679cc2-98ed-419b-bc2c-b0110ffc0394"
-version: "1.0.0.6"
+version: "1.1.0.0"
 targetAbi: "10.11.9.0"
 framework: "net9.0"
 overview: "Fork of JPKribs Live Channels with an expanded scheduling model and filler support."
@@ -17,4 +17,4 @@ artifacts:
 - "Jellyfin.Plugin.MyChannels.dll"
 changelog:
   developer:
-  - Roll back the save-flow visible-progress attempts from v1.0.0.3-1.0.0.5. Button spinner, window.Loading overlay, and custom top-right toast all failed to produce visible feedback in the plugin-page context. Restored the upstream green-text-at-end pattern. Kept the two round-trip cuts (in-memory config on channels-tab save, cached RefreshGuide task id) — those are invisible speedups and are fine.
+  - Scheduling rewrite. Weight and Block-size are now set per top-level item in the channel (series, movie, collection) rather than as channel-wide FavorKind/EpisodesPerBlock knobs. Editor gains a Content Weights section that lists the resolved items with per-row inputs. Loop builder groups by top-level item, allocates round-robin slots by each group's weight, and chunks episodes by each group's block size. FavorKind/FavorStrength/EpisodesPerBlock are deprecated (ignored by the scheduler and hidden from the UI; kept in the model for one release for XML round-trip). A warning is logged on plugin load for any channel that still carries a legacy FavorKind so you can set per-entry weights instead.

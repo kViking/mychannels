@@ -994,10 +994,137 @@ export default function (view) {
 
     // Favouring only applies to a shuffled loop, so the favor block is nested under Shuffle and revealed with it;
     // the strength is nested under the type and revealed once a type other than None is chosen.
-    function updateFavorControls() {
-        el('favorGroup').classList.toggle('hidden', el('loopMode').value !== 'Shuffle');
-        el('favorStrengthGroup').classList.toggle('hidden', el('favorKind').value === 'None');
+    // MARK: Content weights (per-top-level-item overrides)
+    //
+    // The channel's Content Weights section is populated by POSTing the current channel to the plugin's
+    // resolve-top-level endpoint and rendering one row per resolved top-level item. Each row has Weight and
+    // Block-size inputs defaulting to 1; only tweaked rows are persisted in ch.EntryOverrides. Orphaned
+    // overrides (ids the endpoint didn't return — deleted items or filter changes) are shown in a separate
+    // footer so the user can remove them; the server never prunes.
+
+    // The last hydration's response, keyed by item id, kept per channel so the render is stable across UI
+    // interactions. Reset on channel change.
+    var _topLevelById = {};
+    var _entryOverridesHydrated = false;
+
+    function hydrateEntryOverrides(channel) {
+        _entryOverridesHydrated = false;
+        _topLevelById = {};
+        var url = ApiClient.getUrl('livechannels/channels/resolve-top-level');
+        return ApiClient.ajax({
+            type: 'POST',
+            url: url,
+            data: JSON.stringify(channel),
+            contentType: 'application/json',
+            dataType: 'json'
+        }).then(function (rows) {
+            (rows || []).forEach(function (r) { _topLevelById[r.id] = r; });
+            _entryOverridesHydrated = true;
+            renderEntryOverrides(channel);
+        }).catch(function () {
+            _entryOverridesHydrated = true;
+            renderEntryOverrides(channel);
+        });
     }
+
+    function renderEntryOverrides(channel) {
+        var host = el('entryOverridesList');
+        if (!host) return;
+        host.innerHTML = '';
+
+        var overridesById = {};
+        (channel.EntryOverrides || []).forEach(function (o) { overridesById[o.ItemId] = o; });
+
+        var topLevelIds = Object.keys(_topLevelById);
+        if (!_entryOverridesHydrated) {
+            host.innerHTML = '<div class="mych-eo-empty">Loading content...</div>';
+            return;
+        }
+        if (topLevelIds.length === 0) {
+            host.innerHTML = '<div class="mych-eo-empty">No content resolved from this channel\'s sources yet. Add a library or collection source above, then save the channel.</div>';
+            return;
+        }
+
+        // Sort rows alphabetically by name for a stable, scannable list.
+        var rows = topLevelIds.map(function (id) { return _topLevelById[id]; })
+            .sort(function (a, b) { return (a.name || '').localeCompare(b.name || ''); });
+
+        rows.forEach(function (r) {
+            var ov = overridesById[r.id];
+            var row = document.createElement('div');
+            row.className = 'mych-eo-row';
+            row.setAttribute('data-item-id', r.id);
+            var kindLabel = r.kind || '';
+            var childHint = r.childCount ? ' (' + r.childCount + ')' : '';
+            var canBlock = r.kind === 'Series' || r.kind === 'Season' || r.kind === 'Collection';
+            row.innerHTML =
+                '<span class="mych-eo-name" title="' + escapeAttr(r.name) + '">' + escapeText(r.name) +
+                '<span class="mych-eo-kind">' + escapeText(kindLabel + childHint) + '</span></span>' +
+                '<span class="mych-eo-input-label">Weight</span>' +
+                '<input type="number" class="mych-eo-input mych-eo-weight" min="0" step="1" value="' + (ov && ov.Weight ? ov.Weight : 1) + '" />' +
+                (canBlock
+                    ? '<span class="mych-eo-input-label">Block</span><input type="number" class="mych-eo-input mych-eo-blocksize" min="1" step="1" value="' + (ov && ov.BlockSize ? ov.BlockSize : 1) + '" />'
+                    : '');
+            host.appendChild(row);
+        });
+
+        // Orphan footer: overrides referencing ids not in _topLevelById. Shown so the user can prune them.
+        var orphans = (channel.EntryOverrides || []).filter(function (o) { return !_topLevelById[o.ItemId]; });
+        if (orphans.length) {
+            var footer = document.createElement('div');
+            footer.className = 'mych-eo-orphans';
+            footer.innerHTML = '<div><strong>Unused overrides (' + orphans.length + ')</strong> — items no longer in this channel. Remove them on next save.</div>';
+            orphans.forEach(function (o) {
+                var line = document.createElement('div');
+                line.className = 'mych-eo-orphan-row';
+                line.innerHTML = '<span>' + escapeText(o.ItemId) + '</span>' +
+                    ' <span>weight=' + (o.Weight != null ? o.Weight : '-') + ' block=' + (o.BlockSize != null ? o.BlockSize : '-') + '</span>' +
+                    ' <span class="mych-eo-orphan-remove" data-orphan-id="' + o.ItemId + '">remove</span>';
+                footer.appendChild(line);
+            });
+            host.appendChild(footer);
+            footer.addEventListener('click', function (e) {
+                var target = e.target;
+                if (target && target.classList && target.classList.contains('mych-eo-orphan-remove')) {
+                    var id = target.getAttribute('data-orphan-id');
+                    channel.EntryOverrides = (channel.EntryOverrides || []).filter(function (o) { return o.ItemId !== id; });
+                    renderEntryOverrides(channel);
+                }
+            });
+        }
+    }
+
+    // Reads the rendered rows back into a sparse EntryOverrides list. Any row at default (weight=1, blockSize=1)
+    // is pruned. Orphans in ch.EntryOverrides that the user didn't remove are preserved.
+    function readEntryOverridesFrom(channel) {
+        var host = el('entryOverridesList');
+        if (!host) return;
+        var edited = [];
+        host.querySelectorAll('.mych-eo-row').forEach(function (row) {
+            var id = row.getAttribute('data-item-id');
+            var weight = parseInt(row.querySelector('.mych-eo-weight').value, 10);
+            if (isNaN(weight) || weight < 0) weight = 1;
+            var blockInput = row.querySelector('.mych-eo-blocksize');
+            var blockSize = blockInput ? parseInt(blockInput.value, 10) : 1;
+            if (isNaN(blockSize) || blockSize < 1) blockSize = 1;
+            if (weight !== 1 || blockSize !== 1) {
+                var entry = { ItemId: id };
+                if (weight !== 1) entry.Weight = weight;
+                if (blockSize !== 1) entry.BlockSize = blockSize;
+                edited.push(entry);
+            }
+        });
+        // Preserve any orphans still in the channel's overrides (the user might not have removed them).
+        var orphans = (channel.EntryOverrides || []).filter(function (o) { return !_topLevelById[o.ItemId]; });
+        channel.EntryOverrides = edited.concat(orphans);
+    }
+
+    function escapeText(s) {
+        s = String(s == null ? '' : s);
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function escapeAttr(s) { return escapeText(s).replace(/"/g, '&quot;'); }
 
     // MARK: Editor load / save
 
@@ -1026,7 +1153,6 @@ export default function (view) {
         el('minCriticRating').value = ch.MinCriticRating || '';
         studioPicker.setValue((ch.Studios || []).map(function (s) { return { key: s, label: s }; }));
         peoplePicker.setValue((ch.People || []).map(function (p) { return { key: p.Id, label: p.Name }; }));
-        el('episodesPerBlock').value = ch.EpisodesPerBlock || 1;
         el('keepMultiPart').checked = ch.KeepMultiPartTogether !== false;
         el('includeEpisodes').checked = ch.IncludeEpisodes !== false;
         el('includeMovies').checked = ch.IncludeMovies !== false;
@@ -1035,13 +1161,16 @@ export default function (view) {
         el('includeHomeVideos').checked = !!ch.IncludeHomeVideos;
         el('loopMode').value = ch.LoopMode || (ch.Shuffle === false ? 'Alphabetical' : 'Shuffle');
         el('episodeOrder').value = ch.ShuffleEpisodes ? 'random' : 'air';
-        el('favorKind').value = ch.FavorKind || 'None';
-        el('favorStrength').value = ch.FavorStrength || 'Moderate';
-        updateFavorControls();
         el('subtitleBurnIn').value = ch.SubtitleBurnIn || 'Never';
 
         currentEnabled = ch.Enabled !== false;
         setEnableVisual(currentEnabled);
+
+        // Populate the Content Weights section from the plugin's resolve-top-level endpoint. Async: renders
+        // a loading placeholder immediately, then the real list when the fetch returns.
+        ch.EntryOverrides = ch.EntryOverrides || [];
+        renderEntryOverrides(ch);
+        hydrateEntryOverrides(ch);
     }
 
     function readEditorInto(ch) {
@@ -1069,7 +1198,6 @@ export default function (view) {
         ch.MinCriticRating = isNaN(minCritic) ? 0 : Math.min(100, Math.max(0, minCritic));
         ch.Studios = studioPicker ? studioPicker.getValue().map(function (s) { return s.key; }) : (ch.Studios || []);
         ch.People = peoplePicker ? peoplePicker.getValue().map(function (p) { return { Id: p.key, Name: p.label }; }) : (ch.People || []);
-        ch.EpisodesPerBlock = Math.max(1, parseInt(el('episodesPerBlock').value, 10) || 1);
         ch.KeepMultiPartTogether = el('keepMultiPart').checked;
         ch.IncludeEpisodes = el('includeEpisodes').checked;
         ch.IncludeMovies = el('includeMovies').checked;
@@ -1079,9 +1207,13 @@ export default function (view) {
         ch.LoopMode = el('loopMode').value;
         ch.Shuffle = ch.LoopMode === 'Shuffle';
         ch.ShuffleEpisodes = el('episodeOrder').value === 'random';
-        ch.FavorKind = el('favorKind').value;
-        ch.FavorStrength = el('favorStrength').value;
         ch.SubtitleBurnIn = el('subtitleBurnIn').value;
+        readEntryOverridesFrom(ch);
+        // Deprecated in v1.1.0.0 — the scheduler no longer reads these; explicitly zero them so a save doesn't
+        // preserve stale intent that a rollback to v1.0 would resurrect.
+        ch.EpisodesPerBlock = 1;
+        ch.FavorKind = 'None';
+        ch.FavorStrength = 'Moderate';
         ch.Enabled = currentEnabled;
         // Sources are mutated live by the cards; keep the display names in sync.
         ch.Sources.forEach(function (s) {
@@ -1251,9 +1383,9 @@ export default function (view) {
             Id: newId(), Name: '', Number: nextNumber(), LogoData: '', LogoContentType: '',
             LogoStyle: 'Number', LogoSymbol: '', LogoShowName: true,
             Sources: [], AudioLanguage: '', RatingBlocks: [], TransitionWindowMinutes: 0, MinOfficialRating: '', MaxOfficialRating: '', IncludeUnrated: true, Category: 'None',
-            EpisodesPerBlock: 1, KeepMultiPartTogether: true,
+            KeepMultiPartTogether: true, EntryOverrides: [],
             IncludeEpisodes: true, IncludeMovies: true, IncludeSpecials: false, IncludeMusicVideos: true, IncludeHomeVideos: false, Shuffle: true, LoopMode: 'Shuffle', ShuffleEpisodes: false,
-            FavorKind: 'None', FavorStrength: 'Moderate', SubtitleBurnIn: 'Never', Enabled: true
+            SubtitleBurnIn: 'Never', Enabled: true
         });
         currentIndex = channels.length - 1;
         renderSelect();
@@ -1315,8 +1447,6 @@ export default function (view) {
         el('logoStyle').addEventListener('change', renderLogoPreview);
         el('logoSymbol').addEventListener('input', function () { if (!logoData) renderLogoPreview(); });
         el('logoShowName').addEventListener('change', function () { if (!logoData) renderLogoPreview(); });
-        el('favorKind').addEventListener('change', updateFavorControls);
-        el('loopMode').addEventListener('change', updateFavorControls);
         el('addRatingBlock').addEventListener('click', function () {
             var ch = channels[currentIndex];
             if (!ch) return;
