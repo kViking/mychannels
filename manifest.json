@@ -9,6 +9,14 @@
     "category": "LiveTV",
     "versions": [
       {
+        "version": "1.0.0.4",
+        "changelog": "Use Jellyfin's built-in Loading spinner overlay for the save-flow progress feedback. The v1.0.0.3 button-innerHTML approach was invisible in practice (the custom-element polyfill made the swap silently no-op); window.Loading.show/hide is the supported pattern every legacy Jellyfin controller uses.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/kViking/mychannels/releases/download/v1.0.0.4/mychannels-1.0.0.4.zip",
+        "checksum": "89f395a2c13e6d110108df68f5f590c9",
+        "timestamp": "2026-07-25T22:03:06Z"
+      },
+      {
         "version": "1.0.0.3",
         "changelog": "Save-flow UX pass. Save, Import, Delete, Save Popular, Save Settings, and Rebuild Schedule now disable their trigger button, show a spinner, and surface real success/failure with the error message when things break — no more 5-10 seconds of silent frozen UI. Cached the RefreshGuide task id so save flows skip a task-enumeration round-trip. The channels tab now saves from its in-memory config instead of re-fetching first, cutting another round-trip (trade-off documented in the code: single-admin homelab only).",
         "targetAbi": "10.11.9.0",
