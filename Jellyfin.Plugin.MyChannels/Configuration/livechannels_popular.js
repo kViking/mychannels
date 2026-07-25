@@ -24,24 +24,42 @@ export default function (view) {
 
     function el(id) { return view.querySelector('#' + id); }
 
-    // Wraps a long async action in visible progress feedback: pops Jellyfin's full-screen
-    // Loading spinner overlay (window.Loading, registered by main.jellyfin.bundle.js),
-    // disables the trigger button to prevent double-clicks, sets a live status line, then
-    // reports real success or failure with the returned error surfaced.
+    // Toggles a fixed-position progress toast in the top-right of the page. Self-contained
+    // (creates its own DOM on first call). Duplicated across tab modules.
+    function showProgress(msg, isError) {
+        var toast = document.getElementById('mychProgressToast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'mychProgressToast';
+            toast.className = 'mych-progress';
+            toast.innerHTML = '<div class="mych-progress-spinner" aria-hidden="true"></div><span class="mych-progress-text"></span>';
+            document.body.appendChild(toast);
+        }
+        toast.classList.remove('mych-progress-hidden');
+        toast.classList.toggle('mych-progress-error', !!isError);
+        toast.querySelector('.mych-progress-text').textContent = msg;
+    }
+    function hideProgress() {
+        var toast = document.getElementById('mychProgressToast');
+        if (toast) toast.classList.add('mych-progress-hidden');
+    }
+
     function runAsync(btnId, statusId, workingMsg, doneMsg, failMsg, thunk) {
         var btn = btnId ? el(btnId) : null;
         if (btn) btn.disabled = true;
-        if (window.Loading) window.Loading.show();
+        showProgress(workingMsg + '…', false);
         Shared.setStatus(statusId, workingMsg + '…', false);
         return Promise.resolve().then(thunk).then(function () {
             if (btn) btn.disabled = false;
-            if (window.Loading) window.Loading.hide();
+            hideProgress();
             Shared.setStatus(statusId, doneMsg, false);
         }).catch(function (err) {
             if (btn) btn.disabled = false;
-            if (window.Loading) window.Loading.hide();
             var detail = err && (err.message || err.statusText || String(err));
-            Shared.setStatus(statusId, failMsg + (detail ? ' (' + detail + ')' : ''), true);
+            var full = failMsg + (detail ? ' (' + detail + ')' : '');
+            showProgress(full, true);
+            setTimeout(hideProgress, 6000);
+            Shared.setStatus(statusId, full, true);
         });
     }
 

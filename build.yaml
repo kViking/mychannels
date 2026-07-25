@@ -1,7 +1,7 @@
 ---
 name: "MyChannels"
 guid: "65679cc2-98ed-419b-bc2c-b0110ffc0394"
-version: "1.0.0.4"
+version: "1.0.0.5"
 targetAbi: "10.11.9.0"
 framework: "net9.0"
 overview: "Fork of JPKribs Live Channels with an expanded scheduling model and filler support."
@@ -17,4 +17,4 @@ artifacts:
 - "Jellyfin.Plugin.MyChannels.dll"
 changelog:
   developer:
-  - Use Jellyfin's built-in Loading spinner overlay for the save-flow progress feedback. The v1.0.0.3 button-innerHTML approach was invisible in practice (the custom-element polyfill treats customized buttons in a way that made the swap silently no-op); window.Loading.show/hide is the supported pattern every legacy Jellyfin controller uses and shows a proper full-screen spinner.
+  - Replace the save-flow progress feedback with a self-contained top-right toast. The v1.0.0.3 button-innerHTML approach was invisible in practice, and v1.0.0.4's window.Loading global apparently isn't available in the plugin page context. Rolling our own toast (created lazily in the DOM, styled via a style block in each config page) means zero dependency on Jellyfin globals — Save, Import, Delete, etc. now show a fixed-position spinner + text that can't be missed, and surface real error messages on failure.
