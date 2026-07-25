@@ -20,8 +20,32 @@ export default function (view) {
     var ratings = [];          // [{ Name, Value }]
     var ratingOptions = '';    // cached <option> html for the per-block rating selects
     var popularConfig = null;  // the PopularChannel object being edited (holds RatingBlocks)
+    var _refreshGuideTaskId = null;  // Cached RefreshGuide task id so save skips a task-enumeration round-trip.
 
     function el(id) { return view.querySelector('#' + id); }
+
+    // Wraps a long async action in visible progress feedback: disables the trigger button,
+    // swaps its label for a spinner + working message, sets a live status line, then reports
+    // real success or failure. Duplicated across tab modules because the shared JS package
+    // (JPKribs.Jellyfin.Base) doesn't expose this helper.
+    function runAsync(btnId, statusId, workingMsg, doneMsg, failMsg, thunk) {
+        var btn = btnId ? el(btnId) : null;
+        var originalHtml = btn ? btn.innerHTML : null;
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.add('mych-btn-working');
+            btn.innerHTML = '<span class="material-icons mych-spin" aria-hidden="true">progress_activity</span><span>' + workingMsg + '…</span>';
+        }
+        Shared.setStatus(statusId, workingMsg + '…', false);
+        return Promise.resolve().then(thunk).then(function () {
+            if (btn) { btn.disabled = false; btn.classList.remove('mych-btn-working'); btn.innerHTML = originalHtml; }
+            Shared.setStatus(statusId, doneMsg, false);
+        }).catch(function (err) {
+            if (btn) { btn.disabled = false; btn.classList.remove('mych-btn-working'); btn.innerHTML = originalHtml; }
+            var detail = err && (err.message || err.statusText || String(err));
+            Shared.setStatus(statusId, failMsg + (detail ? ' (' + detail + ')' : ''), true);
+        });
+    }
 
     // Populates the kids-rating dropdown and caches the rating options for the block editor.
     function loadRatings() {
@@ -154,47 +178,53 @@ export default function (view) {
 
     // Triggers Jellyfin's built-in guide refresh so a save propagates to Live TV right away.
     function refreshGuide() {
-        return ApiClient.getScheduledTasks().then(function (tasks) {
-            var task = (tasks || []).filter(function (t) { return t.Key === 'RefreshGuide'; })[0];
-            if (task) return ApiClient.startScheduledTask(task.Id);
-        }).catch(function () { /* best effort */ });
+        var lookup = _refreshGuideTaskId
+            ? Promise.resolve(_refreshGuideTaskId)
+            : ApiClient.getScheduledTasks().then(function (tasks) {
+                var t = (tasks || []).filter(function (x) { return x.Key === 'RefreshGuide'; })[0];
+                _refreshGuideTaskId = t ? t.Id : null;
+                return _refreshGuideTaskId;
+            });
+        return lookup.then(function (id) {
+            if (id) return ApiClient.startScheduledTask(id);
+        });
     }
 
     function savePopular() {
-        // Read the latest config so settings on the other tabs are preserved, then update just the popular channel.
-        Shared.getConfig().then(function (fresh) {
-            var pc = fresh.PopularChannel || {};
-            pc.Enabled = el('popularEnabled').checked;
-            pc.Name = (el('popularName').value || '').trim() || 'Popular';
-            // The number and content are fixed; the logo always uses the symbol on this channel.
-            pc.Number = 0;
-            pc.LogoStyle = 'Symbol';
-            pc.LogoSymbol = (el('popularIcon').value || '').trim();
-            pc.LogoShowName = el('popularShowName').checked;
-            pc.SubtitleBurnIn = el('popularSubtitle').value;
-            // Blocks are mutated live on the cards; the transition window is read here. The blocks are authoritative,
-            // so neutralise the legacy single-band fields to keep them from double-applying.
-            pc.RatingBlocks = (popularConfig && popularConfig.RatingBlocks) || [];
-            pc.TransitionWindowMinutes = Math.max(0, parseInt(el('popularTransitionWindow').value, 10) || 0);
-            pc.MinOfficialRating = '';
-            pc.MaxOfficialRating = '';
-            pc.IncludeUnrated = true;
-            pc.Category = el('popularCategory').value;
-            pc.EpisodesPerBlock = Math.max(1, parseInt(el('popularEpisodesPerBlock').value, 10) || 1);
-            pc.ShuffleEpisodes = el('popularEpisodeOrder').value === 'random';
-            pc.KeepMultiPartTogether = el('popularKeepMultiPart').checked;
-            pc.IncludeEpisodes = el('popularIncludeEpisodes').checked;
-            pc.IncludeMovies = el('popularIncludeMovies').checked;
-            pc.IncludeSpecials = el('popularIncludeSpecials').checked;
-            pc.LoopMode = el('popularLoopMode').value;
-            pc.Shuffle = pc.LoopMode === 'Shuffle';
-            fresh.PopularChannel = pc;
-            return Shared.saveConfig(fresh);
-        }).then(function () {
-            refreshGuide();
-            Shared.setStatus('popularStatus', 'Saved. Refreshing Live TV…', false);
-        }).catch(function () {
-            Shared.setStatus('popularStatus', 'Save failed.', true);
+        // Reads fresh config first: this tab only touches PopularChannel, and any concurrent
+        // channel/setting edit on another tab must be preserved. Trade-off is one round-trip,
+        // acceptable here.
+        runAsync('btnSavePopular', 'popularStatus', 'Saving', 'Saved.', 'Save failed.', function () {
+            return Shared.getConfig().then(function (fresh) {
+                var pc = fresh.PopularChannel || {};
+                pc.Enabled = el('popularEnabled').checked;
+                pc.Name = (el('popularName').value || '').trim() || 'Popular';
+                // The number and content are fixed; the logo always uses the symbol on this channel.
+                pc.Number = 0;
+                pc.LogoStyle = 'Symbol';
+                pc.LogoSymbol = (el('popularIcon').value || '').trim();
+                pc.LogoShowName = el('popularShowName').checked;
+                pc.SubtitleBurnIn = el('popularSubtitle').value;
+                // Blocks are mutated live on the cards; the transition window is read here. The blocks
+                // are authoritative, so neutralise the legacy single-band fields to keep them from
+                // double-applying.
+                pc.RatingBlocks = (popularConfig && popularConfig.RatingBlocks) || [];
+                pc.TransitionWindowMinutes = Math.max(0, parseInt(el('popularTransitionWindow').value, 10) || 0);
+                pc.MinOfficialRating = '';
+                pc.MaxOfficialRating = '';
+                pc.IncludeUnrated = true;
+                pc.Category = el('popularCategory').value;
+                pc.EpisodesPerBlock = Math.max(1, parseInt(el('popularEpisodesPerBlock').value, 10) || 1);
+                pc.ShuffleEpisodes = el('popularEpisodeOrder').value === 'random';
+                pc.KeepMultiPartTogether = el('popularKeepMultiPart').checked;
+                pc.IncludeEpisodes = el('popularIncludeEpisodes').checked;
+                pc.IncludeMovies = el('popularIncludeMovies').checked;
+                pc.IncludeSpecials = el('popularIncludeSpecials').checked;
+                pc.LoopMode = el('popularLoopMode').value;
+                pc.Shuffle = pc.LoopMode === 'Shuffle';
+                fresh.PopularChannel = pc;
+                return Shared.saveConfig(fresh);
+            }).then(refreshGuide);
         });
     }
 

@@ -19,8 +19,32 @@ export default function (view) {
     var _bound = false;
     var cultures = [];         // cached [{ key: ISO code, label: name }] for the language search
     var langSelect = null;     // searchable single-select for the default subtitle language
+    var _refreshGuideTaskId = null;  // Cached RefreshGuide task id so save skips a task-enumeration round-trip.
 
     function el(id) { return view.querySelector('#' + id); }
+
+    // Wraps a long async action in visible progress feedback: disables the trigger button,
+    // swaps its label for a spinner + working message, sets a live status line, then reports
+    // real success or failure. Duplicated across tab modules because the shared JS package
+    // (JPKribs.Jellyfin.Base) doesn't expose this helper.
+    function runAsync(btnId, statusId, workingMsg, doneMsg, failMsg, thunk) {
+        var btn = btnId ? el(btnId) : null;
+        var originalHtml = btn ? btn.innerHTML : null;
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.add('mych-btn-working');
+            btn.innerHTML = '<span class="material-icons mych-spin" aria-hidden="true">progress_activity</span><span>' + workingMsg + '…</span>';
+        }
+        Shared.setStatus(statusId, workingMsg + '…', false);
+        return Promise.resolve().then(thunk).then(function () {
+            if (btn) { btn.disabled = false; btn.classList.remove('mych-btn-working'); btn.innerHTML = originalHtml; }
+            Shared.setStatus(statusId, doneMsg, false);
+        }).catch(function (err) {
+            if (btn) { btn.disabled = false; btn.classList.remove('mych-btn-working'); btn.innerHTML = originalHtml; }
+            var detail = err && (err.message || err.statusText || String(err));
+            Shared.setStatus(statusId, failMsg + (detail ? ' (' + detail + ')' : ''), true);
+        });
+    }
 
     // The display name for a stored language code, falling back to the code itself when cultures are unavailable.
     function cultureLabel(code) {
@@ -153,33 +177,40 @@ export default function (view) {
 
     // Triggers Jellyfin's built-in guide refresh so a save propagates to Live TV right away.
     function refreshGuide() {
-        return ApiClient.getScheduledTasks().then(function (tasks) {
-            var task = (tasks || []).filter(function (t) { return t.Key === 'RefreshGuide'; })[0];
-            if (task) return ApiClient.startScheduledTask(task.Id);
-        }).catch(function () { /* best effort */ });
+        var lookup = _refreshGuideTaskId
+            ? Promise.resolve(_refreshGuideTaskId)
+            : ApiClient.getScheduledTasks().then(function (tasks) {
+                var t = (tasks || []).filter(function (x) { return x.Key === 'RefreshGuide'; })[0];
+                _refreshGuideTaskId = t ? t.Id : null;
+                return _refreshGuideTaskId;
+            });
+        return lookup.then(function (id) {
+            if (id) return ApiClient.startScheduledTask(id);
+        });
     }
 
     function saveSettings() {
-        // Read the latest config so channel edits made on the other tab are preserved.
-        Shared.getConfig().then(function (fresh) {
-            fresh.TranscodeWidth = parseInt(el('resolution').value, 10) || 1280;
-            fresh.VideoCodec = el('videoCodec').value;
-            fresh.AudioCodec = el('audioCodec').value;
-            fresh.TranscodeVideoBitrateKbps = Math.max(500, parseInt(el('videoBitrate').value, 10) || 4000);
-            var maxSessions = parseInt(el('maxSessions').value, 10);
-            fresh.MaxConcurrentSessions = isNaN(maxSessions) ? 3 : Math.max(0, maxSessions);
-            var timeout = parseInt(el('sessionTimeout').value, 10);
-            fresh.SessionTimeoutMinutes = isNaN(timeout) ? 0 : Math.max(0, timeout);
-            fresh.StreamDirectory = (el('streamDirectory').value || '').trim();
-            fresh.DisableHardwareAcceleration = el('disableHwa').checked;
-            fresh.DefaultSubtitleLanguage = (langSelect ? langSelect.getValue() : '') || 'eng';
-            return Shared.saveConfig(fresh);
-        }).then(function () {
-            renderAcceleration();
-            refreshGuide();
-            Shared.setStatus('settingsStatus', 'Saved. Refreshing Live TV…', false);
-        }).catch(function () {
-            Shared.setStatus('settingsStatus', 'Save failed.', true);
+        // Settings tab reads fresh config first: it only sets a handful of scalar fields, so
+        // any concurrent channel edit on the other tab must be preserved (unlike the channels
+        // tab, which owns Channels wholesale). Trade-off is one round-trip, acceptable here.
+        runAsync('btnSaveSettings', 'settingsStatus', 'Saving', 'Saved.', 'Save failed.', function () {
+            return Shared.getConfig().then(function (fresh) {
+                fresh.TranscodeWidth = parseInt(el('resolution').value, 10) || 1280;
+                fresh.VideoCodec = el('videoCodec').value;
+                fresh.AudioCodec = el('audioCodec').value;
+                fresh.TranscodeVideoBitrateKbps = Math.max(500, parseInt(el('videoBitrate').value, 10) || 4000);
+                var maxSessions = parseInt(el('maxSessions').value, 10);
+                fresh.MaxConcurrentSessions = isNaN(maxSessions) ? 3 : Math.max(0, maxSessions);
+                var timeout = parseInt(el('sessionTimeout').value, 10);
+                fresh.SessionTimeoutMinutes = isNaN(timeout) ? 0 : Math.max(0, timeout);
+                fresh.StreamDirectory = (el('streamDirectory').value || '').trim();
+                fresh.DisableHardwareAcceleration = el('disableHwa').checked;
+                fresh.DefaultSubtitleLanguage = (langSelect ? langSelect.getValue() : '') || 'eng';
+                return Shared.saveConfig(fresh);
+            }).then(function () {
+                renderAcceleration();
+                return refreshGuide();
+            });
         });
     }
 
@@ -187,16 +218,10 @@ export default function (view) {
     // The schedule is a pure projection of the channels, so a guide rebuild is a full reset: a stale schedule
     // (for example one still showing a now-excluded genre) is recreated fresh.
     function resetSchedule() {
-        Shared.setStatus('resetStatus', 'Rebuilding schedule and guide…', false);
-        ApiClient.getScheduledTasks().then(function (tasks) {
-            var task = (tasks || []).filter(function (t) { return t.Key === 'RefreshGuide'; })[0];
-            if (!task) { throw new Error('Refresh Guide task not found'); }
-            return ApiClient.startScheduledTask(task.Id);
-        }).then(function () {
-            Shared.setStatus('resetStatus', 'Done. The guide is rebuilding in the background.', false);
-        }).catch(function () {
-            Shared.setStatus('resetStatus', 'Could not start the rebuild. Try again in a moment.', true);
-        });
+        runAsync('btnResetSchedule', 'resetStatus', 'Rebuilding schedule and guide',
+            'Done. The guide is rebuilding in the background.',
+            'Could not start the rebuild. Try again in a moment.',
+            refreshGuide);
     }
 
     // --- Stress test: measures how many concurrent streams the encoder sustains, using the production pipeline.

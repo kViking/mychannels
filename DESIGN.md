@@ -17,6 +17,15 @@ Two big features, two smaller fixes:
 - **Library-event cache invalidation**: hook `ItemAdded`/`Updated`/`Removed`
   so new content appears without waiting for the next guide refresh.
 
+Future refactor (not yet scoped):
+
+- **Split `livechannels_channels.js`** — currently ~1300 lines in a single
+  IIFE-style module with heavy shared closure state (config, channels, ratings,
+  cultures, pickers). Splitting into focused modules (io/persist, editor,
+  sources, filters, ratings) would help but requires either the shared JS
+  package (JPKribs.Jellyfin.Base) to expose more injection points, or an
+  in-plugin barrel-style shared helper. Not a first-release change.
+
 Rejected (considered, not doing):
 
 - **Daypart weighting** — themed-channel model makes it useless; would require

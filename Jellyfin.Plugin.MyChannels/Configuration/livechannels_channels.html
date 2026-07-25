@@ -8,6 +8,9 @@
             src: url('configurationpage?name=livechannels_symbols.ttf') format('truetype');
             font-display: swap;
         }
+        @keyframes mych-spin { to { transform: rotate(360deg); } }
+        .mych-spin { animation: mych-spin 1s linear infinite; display: inline-block; }
+        .mych-btn-working { opacity: 0.75; pointer-events: none; }
     </style>
     <div data-role="content">
         <div class="content-primary">

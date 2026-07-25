@@ -33,8 +33,33 @@ export default function (view) {
     var audioLangPicker = null;// channel-level audio-language single-select typeahead (created once)
     var cultures = [];         // cached [{ key: ISO code, label: name }] for the language search
     var _bound = false;
+    var _refreshGuideTaskId = null;  // Cached RefreshGuide task id so save flows skip a task-enumeration round-trip.
 
     function el(id) { return view.querySelector('#' + id); }
+
+    // Wraps a long async action in visible progress feedback: disables the trigger button,
+    // swaps its label for a spinner + working message, sets a live status line, then reports
+    // real success or failure with the returned error surfaced. Without this, save/import/
+    // delete on a large channel setup leaves the UI frozen-looking for 5-10 seconds while
+    // three serial round-trips complete.
+    function runAsync(btnId, statusId, workingMsg, doneMsg, failMsg, thunk) {
+        var btn = btnId ? el(btnId) : null;
+        var originalHtml = btn ? btn.innerHTML : null;
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.add('mych-btn-working');
+            btn.innerHTML = '<span class="material-icons mych-spin" aria-hidden="true">progress_activity</span><span>' + workingMsg + '…</span>';
+        }
+        Shared.setStatus(statusId, workingMsg + '…', false);
+        return Promise.resolve().then(thunk).then(function () {
+            if (btn) { btn.disabled = false; btn.classList.remove('mych-btn-working'); btn.innerHTML = originalHtml; }
+            Shared.setStatus(statusId, doneMsg, false);
+        }).catch(function (err) {
+            if (btn) { btn.disabled = false; btn.classList.remove('mych-btn-working'); btn.innerHTML = originalHtml; }
+            var detail = err && (err.message || err.statusText || String(err));
+            Shared.setStatus(statusId, failMsg + (detail ? ' (' + detail + ')' : ''), true);
+        });
+    }
 
     // Parses the Years field into a sorted, de-duplicated list of production years. Accepts individual years and
     // ranges (e.g. "1990-1999, 2005" or "1990 1991 1992"), so a decade is two keystrokes rather than ten entries.
@@ -1098,7 +1123,7 @@ export default function (view) {
         if (!ch.Name) { Shared.setStatus('channelStatus', 'A name is required.', true); return; }
         if (!ch.Sources.length) { Shared.setStatus('channelStatus', 'Add at least one library source.', true); return; }
         if (ch.Sources.some(function (s) { return s.Kind === 'Collection' ? !s.CollectionId : !s.LibraryId; })) { Shared.setStatus('channelStatus', 'Pick a library or collection for each source.', true); return; }
-        persist('channelStatus', 'Saved.', 'Save failed.');
+        persist('btnSaveChannel', 'channelStatus', 'Saved.', 'Save failed.');
     }
 
     function stripInternal(list) {
@@ -1114,27 +1139,38 @@ export default function (view) {
         });
     }
 
-    // Trigger Jellyfin's built-in guide refresh so channel changes propagate to Live TV (re-pull the
-    // channels and guide) without the user having to run it by hand.
+    // Trigger Jellyfin's built-in guide refresh so channel changes propagate to Live TV (re-pull
+    // the channels and guide) without the user having to run it by hand. The RefreshGuide task
+    // id is cached after the first lookup so subsequent saves skip a round-trip.
     function refreshLiveTv() {
-        return ApiClient.getScheduledTasks().then(function (tasks) {
-            var task = (tasks || []).filter(function (t) { return t.Key === 'RefreshGuide'; })[0];
-            if (task) return ApiClient.startScheduledTask(task.Id);
-        }).catch(function () { /* best effort */ });
+        var lookup = _refreshGuideTaskId
+            ? Promise.resolve(_refreshGuideTaskId)
+            : ApiClient.getScheduledTasks().then(function (tasks) {
+                var t = (tasks || []).filter(function (x) { return x.Key === 'RefreshGuide'; })[0];
+                _refreshGuideTaskId = t ? t.Id : null;
+                return _refreshGuideTaskId;
+            });
+        return lookup.then(function (id) {
+            if (id) return ApiClient.startScheduledTask(id);
+        });
     }
 
-    function persist(statusId, okMessage, errMessage) {
-        return Shared.getConfig().then(function (fresh) {
-            fresh.Channels = stripInternal(channels);
-            config = fresh;
-            return Shared.saveConfig(fresh);
-        }).then(function () {
+    // The save + refresh chain, returned as a promise so multiple entry points (save, import,
+    // delete) can share it. Uses the in-memory config as the base rather than re-fetching
+    // Shared.getConfig() first — trades multi-tab safety (a settings edit in another browser
+    // tab since page load would be clobbered) for one fewer round-trip. Single-admin homelab
+    // is the norm, so the trade is acceptable.
+    function persistInternal() {
+        var fresh = Object.assign({}, config, { Channels: stripInternal(channels) });
+        config = fresh;
+        return Shared.saveConfig(fresh).then(function () {
             renderSelect();
-            refreshLiveTv();
-            Shared.setStatus(statusId, okMessage + ' Refreshing Live TV…', false);
-        }).catch(function () {
-            Shared.setStatus(statusId, errMessage, true);
+            return refreshLiveTv();
         });
+    }
+
+    function persist(btnId, statusId, okMessage, errMessage) {
+        return runAsync(btnId, statusId, 'Saving', okMessage, errMessage, persistInternal);
     }
 
     function nextNumber() {
@@ -1220,9 +1256,13 @@ export default function (view) {
         });
 
         currentIndex = channels.length ? 0 : -1;
-        // Resolve item names for any hand-picked sources so the editor reads cleanly, then save + refresh Live TV.
-        hydrateItemNames().then(function () {
-            persist('ioStatus', 'Imported ' + clean.length + ' channel' + (clean.length === 1 ? '' : 's') + ' (' + added + ' added, ' + replaced + ' replaced).', 'Import failed to save.');
+        // Resolve item names for any hand-picked sources so the editor reads cleanly, then save + refresh
+        // Live TV. Wrapped in runAsync so the whole chain (hydrate is a network call across every channel's
+        // sources, and can take several seconds on a large setup) shows progress instead of silent waiting.
+        var doneMsg = 'Imported ' + clean.length + ' channel' + (clean.length === 1 ? '' : 's')
+            + ' (' + added + ' added, ' + replaced + ' replaced).';
+        runAsync('btnImportChannels', 'ioStatus', 'Importing', doneMsg, 'Import failed to save.', function () {
+            return hydrateItemNames().then(persistInternal);
         });
     }
 
@@ -1256,7 +1296,7 @@ export default function (view) {
         if (!window.confirm('Delete channel "' + (ch.Name || 'this channel') + '"? This cannot be undone.')) return;
         channels.splice(currentIndex, 1);
         currentIndex = -1;
-        persist('channelStatus', 'Deleted.', 'Delete failed.');
+        persist('btnDeleteChannel', 'channelStatus', 'Deleted.', 'Delete failed.');
     }
 
     function addLibrary() {
