@@ -91,8 +91,8 @@ public class Plugin : PluginBase<Plugin, PluginConfiguration>
             Name = "livechannels_channels",
             EmbeddedResourcePath = $"{ns}.Configuration.livechannels_channels.html",
             MenuSection = "server",
-            DisplayName = "Live Channels",
-            EnableInMainMenu = false
+            DisplayName = "MyChannels",
+            EnableInMainMenu = true
         };
 
         yield return new PluginPageInfo
