@@ -9,6 +9,14 @@
     "category": "LiveTV",
     "versions": [
       {
+        "version": "1.0.0.6",
+        "changelog": "Roll back the save-flow visible-progress attempts from v1.0.0.3-1.0.0.5 — none produced visible feedback in the plugin-page context. Restored the upstream green-text-at-end pattern. Kept the two round-trip cuts (in-memory config on channels-tab save, cached RefreshGuide task id).",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/kViking/mychannels/releases/download/v1.0.0.6/mychannels-1.0.0.6.zip",
+        "checksum": "142e226c835e6704a0f1b49ba61474a5",
+        "timestamp": "2026-07-25T22:23:05Z"
+      },
+      {
         "version": "1.0.0.5",
         "changelog": "Replace the save-flow progress feedback with a self-contained top-right toast. The v1.0.0.4 window.Loading approach produced no visible feedback in the plugin page context. Zero dependency on Jellyfin globals now — Save, Import, Delete, etc. show a fixed-position spinner + text that can't be missed, and surface real error messages on failure.",
         "targetAbi": "10.11.9.0",
