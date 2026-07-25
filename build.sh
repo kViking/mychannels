@@ -5,8 +5,8 @@ set -e
 # Configuration
 CONFIGURATION="${1:-Release}"
 OUTPUT_DIR="dist"
-PROJECT_DIR="Jellyfin.Plugin.LiveChannels"
-PROJECT_FILE="$PROJECT_DIR/Jellyfin.Plugin.LiveChannels.csproj"
+PROJECT_DIR="Jellyfin.Plugin.MyChannels"
+PROJECT_FILE="$PROJECT_DIR/Jellyfin.Plugin.MyChannels.csproj"
 
 # Colors
 RED='\033[0;31m'
@@ -153,7 +153,7 @@ main() {
     fi
 
     # Find the built DLL
-    local dll_path="$PROJECT_DIR/bin/$CONFIGURATION/net9.0/Jellyfin.Plugin.LiveChannels.dll"
+    local dll_path="$PROJECT_DIR/bin/$CONFIGURATION/net9.0/Jellyfin.Plugin.MyChannels.dll"
     if [[ ! -f "$dll_path" ]]; then
         log "ERROR" "Could not find built DLL at: $dll_path"
         exit 1
@@ -162,7 +162,7 @@ main() {
     log "SUCCESS" "Build completed: $dll_path"
 
     # Create ZIP package
-    local zip_name="jellyfin-plugin-livechannels-$VERSION.zip"
+    local zip_name="mychannels-$VERSION.zip"
     local zip_path="$OUTPUT_DIR/$zip_name"
 
     log "INFO" "Creating package: $zip_name"

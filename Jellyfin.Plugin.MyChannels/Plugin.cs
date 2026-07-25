@@ -1,0 +1,154 @@
+using System;
+using System.Collections.Generic;
+using Jellyfin.Plugin.MyChannels.Configuration;
+using Jellyfin.Plugin.MyChannels.Services;
+using JPKribs.Jellyfin.Base;
+using MediaBrowser.Common.Configuration;
+using MediaBrowser.Model.Plugins;
+using MediaBrowser.Model.Serialization;
+using Microsoft.Extensions.Logging;
+
+namespace Jellyfin.Plugin.MyChannels;
+
+/// <summary>
+/// Main plugin entry point for Live Channels.
+/// </summary>
+public class Plugin : PluginBase<Plugin, PluginConfiguration>
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="Plugin"/> class.
+    /// </summary>
+    /// <param name="applicationPaths">The application paths.</param>
+    /// <param name="xmlSerializer">The XML serializer.</param>
+    /// <param name="logger">The logger.</param>
+    public Plugin(
+        IApplicationPaths applicationPaths,
+        IXmlSerializer xmlSerializer,
+        ILogger<Plugin> logger)
+        : base(applicationPaths, xmlSerializer)
+    {
+        ArgumentNullException.ThrowIfNull(logger);
+        _applicationPaths = applicationPaths;
+
+        // Time-of-day schedules chain from the last configuration save. An install upgrading past that feature
+        // has no recorded save yet, so stamp one now; without it every build would have to invent an anchor.
+        MutateConfiguration(config =>
+        {
+            if (config.ScheduleAnchorUtc != default)
+            {
+                return false;
+            }
+
+            config.ScheduleAnchorUtc = DateTime.UtcNow;
+            return true;
+        });
+
+        logger.LogInformation("Live Channels plugin initialized");
+    }
+
+    private readonly IApplicationPaths _applicationPaths;
+
+    /// <inheritdoc />
+    public override string Name => "MyChannels";
+
+    /// <inheritdoc />
+    public override Guid Id => Guid.Parse("65679cc2-98ed-419b-bc2c-b0110ffc0394");
+
+    /// <inheritdoc />
+    public override string Description =>
+        "Fork of JPKribs Live Channels with an expanded scheduling model, filler pools, and an auto-generated Up Next card.";
+
+    /// <summary>
+    /// Validates incoming configuration before persisting it. The dashboard enforces the same rules in the
+    /// browser, but configuration can arrive from any API client.
+    /// </summary>
+    /// <param name="configuration">The incoming configuration.</param>
+    public override void UpdateConfiguration(BasePluginConfiguration configuration)
+    {
+        if (configuration is PluginConfiguration config)
+        {
+            ConfigurationValidator.Validate(config);
+
+            // Every save re-anchors the time-of-day schedule chain (the cache below is dropped anyway, so the
+            // reshuffle this causes coincides with the rebuild the user already expects from saving).
+            config.ScheduleAnchorUtc = DateTime.UtcNow;
+        }
+
+        // A channel edit must not be served from a stale schedule, so drop every cached schedule; the next guide
+        // refresh or tune-in rebuilds it from the new configuration.
+        ChannelService.ClearScheduleCache(_applicationPaths);
+
+        base.UpdateConfiguration(configuration);
+    }
+
+    /// <inheritdoc />
+    public override IEnumerable<PluginPageInfo> GetPages()
+    {
+        var ns = typeof(Plugin).Namespace;
+
+        yield return new PluginPageInfo
+        {
+            Name = "livechannels_channels",
+            EmbeddedResourcePath = $"{ns}.Configuration.livechannels_channels.html",
+            MenuSection = "server",
+            DisplayName = "Live Channels",
+            EnableInMainMenu = false
+        };
+
+        yield return new PluginPageInfo
+        {
+            Name = "livechannels_channels.js",
+            EmbeddedResourcePath = $"{ns}.Configuration.livechannels_channels.js"
+        };
+
+        // Tab 2: Popular channel (the built-in channel 0's own settings).
+        yield return new PluginPageInfo
+        {
+            Name = "livechannels_popular",
+            EmbeddedResourcePath = $"{ns}.Configuration.livechannels_popular.html"
+        };
+
+        yield return new PluginPageInfo
+        {
+            Name = "livechannels_popular.js",
+            EmbeddedResourcePath = $"{ns}.Configuration.livechannels_popular.js"
+        };
+
+        // Tab 3: Settings (plugin-wide configuration).
+        yield return new PluginPageInfo
+        {
+            Name = "livechannels_settings",
+            EmbeddedResourcePath = $"{ns}.Configuration.livechannels_settings.html"
+        };
+
+        yield return new PluginPageInfo
+        {
+            Name = "livechannels_settings.js",
+            EmbeddedResourcePath = $"{ns}.Configuration.livechannels_settings.js"
+        };
+
+        yield return new PluginPageInfo
+        {
+            Name = "livechannels_sessions",
+            EmbeddedResourcePath = $"{ns}.Configuration.livechannels_sessions.html"
+        };
+
+        yield return new PluginPageInfo
+        {
+            Name = "livechannels_sessions.js",
+            EmbeddedResourcePath = $"{ns}.Configuration.livechannels_sessions.js"
+        };
+
+        yield return new PluginPageInfo
+        {
+            Name = "livechannels_symbols.ttf",
+            EmbeddedResourcePath = $"{ns}.Assets.MaterialSymbolsOutlined.ttf"
+        };
+
+        // Shared base CSS and JS compiled in from the JPKribs.Jellyfin.Base package.
+        foreach (var page in GetSharedPages("livechannels"))
+        {
+            yield return page;
+        }
+    }
+}

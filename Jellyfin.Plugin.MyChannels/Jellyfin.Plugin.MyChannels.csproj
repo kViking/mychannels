@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Jellyfin.Plugin.MyChannels</RootNamespace>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Nullable>enable</Nullable>
+    <AnalysisMode>AllEnabledByDefault</AnalysisMode>
+    <CodeAnalysisRuleSet>../jellyfin.ruleset</CodeAnalysisRuleSet>
+    <NoWarn>NU1605;CA1002;CA2227;CA1305</NoWarn>
+    <!-- For the LibraryImport source generator (the hardlink syscalls in RecordingService); no hand-written unsafe code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Jellyfin.Plugin.MyChannels.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.10">
+      <PrivateAssets>all</PrivateAssets>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Jellyfin.Model" Version="10.11.10">
+      <PrivateAssets>all</PrivateAssets>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="JPKribs.Jellyfin.Base" Version="2026.7.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Admin dashboard page -->
+    <EmbeddedResource Include="Configuration\livechannels_channels.html" />
+    <EmbeddedResource Include="Configuration\livechannels_channels.js" />
+    <EmbeddedResource Include="Configuration\livechannels_settings.html" />
+    <EmbeddedResource Include="Configuration\livechannels_settings.js" />
+    <EmbeddedResource Include="Configuration\livechannels_popular.html" />
+    <EmbeddedResource Include="Configuration\livechannels_popular.js" />
+    <EmbeddedResource Include="Configuration\livechannels_sessions.html" />
+    <EmbeddedResource Include="Configuration\livechannels_sessions.js" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Material Symbols font + name-to-codepoint map, used to render symbol channel logos -->
+    <EmbeddedResource Include="Assets\MaterialSymbolsOutlined.ttf" />
+    <EmbeddedResource Include="Assets\MaterialSymbolsOutlined.codepoints" />
+  </ItemGroup>
+
+</Project>
