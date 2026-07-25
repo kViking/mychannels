@@ -9,6 +9,14 @@
     "category": "LiveTV",
     "versions": [
       {
+        "version": "1.1.0.0",
+        "changelog": "Scheduling rewrite. Weight and Block-size are now set per top-level item in the channel (series, movie, collection) rather than as channel-wide FavorKind/EpisodesPerBlock knobs. Editor gains a Content Weights section that lists the resolved items with per-row inputs. FavorKind/FavorStrength/EpisodesPerBlock are deprecated (ignored by the scheduler and hidden from the UI; kept in the model for one release for XML round-trip). A warning is logged on plugin load for any channel that still carries a legacy FavorKind so you can set per-entry weights instead.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/kViking/mychannels/releases/download/v1.1.0.0/mychannels-1.1.0.0.zip",
+        "checksum": "a81f73061c48dcf30c27eab21c3d806f",
+        "timestamp": "2026-07-25T22:58:02Z"
+      },
+      {
         "version": "1.0.0.6",
         "changelog": "Roll back the save-flow visible-progress attempts from v1.0.0.3-1.0.0.5 — none produced visible feedback in the plugin-page context. Restored the upstream green-text-at-end pattern. Kept the two round-trip cuts (in-memory config on channels-tab save, cached RefreshGuide task id).",
         "targetAbi": "10.11.9.0",
