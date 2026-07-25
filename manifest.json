@@ -9,6 +9,14 @@
     "category": "LiveTV",
     "versions": [
       {
+        "version": "1.0.0.3",
+        "changelog": "Save-flow UX pass. Save, Import, Delete, Save Popular, Save Settings, and Rebuild Schedule now disable their trigger button, show a spinner, and surface real success/failure with the error message when things break — no more 5-10 seconds of silent frozen UI. Cached the RefreshGuide task id so save flows skip a task-enumeration round-trip. The channels tab now saves from its in-memory config instead of re-fetching first, cutting another round-trip (trade-off documented in the code: single-admin homelab only).",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/kViking/mychannels/releases/download/v1.0.0.3/mychannels-1.0.0.3.zip",
+        "checksum": "9733ad434139a81d5e1dcc95d6e05610",
+        "timestamp": "2026-07-25T21:52:59Z"
+      },
+      {
         "version": "1.0.0.2",
         "changelog": "Fix hardcoded plugin GUID in the config-page JS. Under the fork's new GUID, /Plugins/{id}/Configuration was 404ing because the JS still asked for the upstream GUID; this aligns the JS with the plugin's actual identity.",
         "targetAbi": "10.11.9.0",
