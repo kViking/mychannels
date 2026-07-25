@@ -11,7 +11,7 @@ export default function (view) {
 
     var Shared = null;
     var setTabs = null;
-    var _sharedPromise = import('/web/configurationpage?name=livechannels_jpkribs_shared.js').then(function (mod) {
+    var _sharedPromise = import('./configurationpage?name=livechannels_jpkribs_shared.js').then(function (mod) {
         Shared = mod.createShared(view, PLUGIN_ID);
         setTabs = mod.setTabs;
     });
