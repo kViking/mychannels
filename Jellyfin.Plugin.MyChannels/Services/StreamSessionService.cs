@@ -103,7 +103,11 @@ public class StreamSessionService
         // guide refresh and cached on the schedule entry, so this is a pure in-memory scan with no media-stream
         // queries on the tune-in critical path. The short-circuit skips even the scan when the channel is
         // already per-item for another reason (burn-in, a >1080p item, or a GPU-upload encoder).
-        var alreadyPerItem = channel.SubtitleBurnIn != Models.SubtitleBurnInMode.Never || highRes || usesHwUpload;
+        // SnapToBoundary uses truncated card playback (a single max-length card file is trimmed at stream time
+        // to fit the actual pad), and concat mode's ffmpeg demuxer plays whole files without honouring per-item
+        // -t limits. So force per-item mode whenever the channel might truncate a program.
+        var needsTruncation = programs.Any(p => p.TruncateToDuration);
+        var alreadyPerItem = channel.SubtitleBurnIn != Models.SubtitleBurnInMode.Never || highRes || usesHwUpload || needsTruncation;
         var hasHdr = !alreadyPerItem && programs.Any(p => p.IsHdr);
         var perItem = alreadyPerItem || hasHdr || timeOfDay;
         var uniform = programs.Count > 0 && programs[0].SourceHeight > 0 && programs.All(p => p.SourceHeight == programs[0].SourceHeight);

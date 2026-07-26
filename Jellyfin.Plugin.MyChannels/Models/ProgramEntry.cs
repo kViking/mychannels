@@ -104,6 +104,9 @@ public sealed class ProgramEntry
 
     /// <summary>Gets the block size in episodes when this entry is part of a series/season. Only meaningful for episodes; ignored for standalone items. Populated at resolve time from <see cref="Channel.EntryOverrides"/>; defaults to 1.</summary>
     public int BlockSize { get; init; } = 1;
+
+    /// <summary>Gets a value indicating whether the streaming pipeline must cap playback at <see cref="DurationTicks"/> even when the file on disk is longer. Used by SnapToBoundary filler cards: one card file is generated at the maximum possible pad length and truncated at stream time to fit the actual pad needed, so the card set stays bounded regardless of loop-order shifts.</summary>
+    public bool TruncateToDuration { get; init; }
 }
 
 /// <summary>

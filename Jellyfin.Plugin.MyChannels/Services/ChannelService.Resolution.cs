@@ -345,10 +345,12 @@ public partial class ChannelService
     }
 
     // Interleaves auto Up Next cards into a raw loop, one before every program, based on the channel's
-    // FillerMode. Cards are inserted only when their MP4 is already cached (EnsureCard is a fast lookup,
-    // never generates). For the first few missing cards we kick off background generation (nice priority,
-    // one at a time), so subsequent resolves pick them up. This lazy approach avoids generating cards for
-    // programs that never air on shared hosting where we can only afford a handful of ffmpeg processes.
+    // FillerMode. For SnapToBoundary the CARD FILE is always generated at the max possible pad length
+    // (SnapMinutes) and truncated at stream time to fit the actual pad — that way one card per program
+    // covers every possible pad duration, so the card set stays bounded across loop reshuffles and
+    // rotation shifts. FixedBumper cards are always the same fixed length, so file-duration and
+    // scheduled-duration agree naturally. Cards are inserted only when the cache file exists; the first
+    // few misses are preheated (nice priority, one ffmpeg at a time).
     private IReadOnlyList<ProgramEntry> InjectFillerCards(Channel channel, IReadOnlyList<ProgramEntry> loop)
     {
         if (loop.Count == 0)
@@ -356,8 +358,6 @@ public partial class ChannelService
             return loop;
         }
 
-        // Only preheat this many missing cards per resolve. RefreshGuide re-runs regularly, so any card
-        // still missing after a resolve will get another chance next time. Small budget = kind to the box.
         const int PreheatBudget = 3;
         var preheatRemaining = PreheatBudget;
 
@@ -366,17 +366,19 @@ public partial class ChannelService
         for (var i = 0; i < loop.Count; i++)
         {
             var program = loop[i];
-            var cardTicks = CardTicksFor(channel, previousDurationTicks);
-            if (cardTicks > 0)
+            var padTicks = CardTicksFor(channel, previousDurationTicks);
+            if (padTicks > 0)
             {
-                var cardPath = _autoCardService.EnsureCard(channel.Id, program, TimeSpan.FromTicks(cardTicks));
+                var truncate = channel.FillerMode == FillerMode.SnapToBoundary;
+                var fileTicks = truncate ? Math.Max(1, channel.SnapMinutes) * TimeSpan.TicksPerMinute : padTicks;
+                var cardPath = _autoCardService.EnsureCard(channel.Id, program, TimeSpan.FromTicks(fileTicks));
                 if (!string.IsNullOrEmpty(cardPath))
                 {
-                    result.Add(BuildCardEntry(program, cardTicks, cardPath));
+                    result.Add(BuildCardEntry(program, padTicks, cardPath, truncate));
                 }
                 else if (preheatRemaining > 0)
                 {
-                    _autoCardService.Preheat(channel.Id, program, TimeSpan.FromTicks(cardTicks));
+                    _autoCardService.Preheat(channel.Id, program, TimeSpan.FromTicks(fileTicks));
                     preheatRemaining--;
                 }
             }
@@ -412,12 +414,12 @@ public partial class ChannelService
     }
 
     // Synthesises a card ProgramEntry: real file path so the streaming pipeline reads it like any other
-    // program, its own item id derived from the target program's id + duration so the schedule cache
-    // treats it as a stable entry across refreshes. Title is what appears in the guide.
-    private static ProgramEntry BuildCardEntry(ProgramEntry nextProgram, long ticks, string cardPath)
+    // program, its own item id derived from the target program's id + scheduled duration so the schedule
+    // cache treats it as a stable entry across refreshes. Title is what appears in the guide. When
+    // truncate is true, the stream caps playback at DurationTicks even though the file on disk is longer.
+    private static ProgramEntry BuildCardEntry(ProgramEntry nextProgram, long ticks, string cardPath, bool truncate)
     {
-        // Deterministic id: same next-program + same duration always yields the same card id, so a stable
-        // guide entry and stable stream position.
+        // Deterministic id: same next-program + same scheduled duration always yields the same card id.
         var idBytes = new byte[16];
         var src = nextProgram.ItemId.ToByteArray();
         Array.Copy(src, idBytes, 16);
@@ -433,7 +435,8 @@ public partial class ChannelService
             RawName = title,
             TopLevelItemId = cardId,   // its own group so the loop builder never grouped it with anything
             Weight = 1,
-            BlockSize = 1
+            BlockSize = 1,
+            TruncateToDuration = truncate
         };
     }
 

@@ -24,6 +24,10 @@ Two big features, two smaller fixes:
 - **Library-event cache invalidation**: hook `ItemAdded`/`Updated`/`Removed`
   so new content appears without waiting for the next guide refresh.
 
+Followup work (out of scope for the current release):
+
+- **Scheduled task: pregen Up Next cards** — a background task (analogous to Jellyfin's trickplay image generation) that walks every enabled channel's resolved top-level items and preheats a card per item. Scope is bounded to items actually referenced by a channel — never the whole library. Runs at Idle priority so it's ceded to viewers. Point: full card cache without waiting on the 3-per-resolve budget.
+
 Future refactor (not yet scoped):
 
 - **Split `livechannels_channels.js`** — currently ~1300 lines in a single

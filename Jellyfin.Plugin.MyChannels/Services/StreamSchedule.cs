@@ -48,7 +48,21 @@ internal sealed class LoopStreamSchedule : IStreamSchedule
 
     public int PoolCount => _programs.Count;
 
-    public StreamStep Current => new(_programs[_index], _offset, null);
+    public StreamStep Current
+    {
+        get
+        {
+            var program = _programs[_index];
+            TimeSpan? limit = null;
+            if (program.TruncateToDuration)
+            {
+                var remaining = TimeSpan.FromTicks(program.DurationTicks) - _offset;
+                limit = remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+            }
+
+            return new StreamStep(program, _offset, limit);
+        }
+    }
 
     public void Advance()
     {
