@@ -1161,6 +1161,7 @@ export default function (view) {
         el('includeHomeVideos').checked = !!ch.IncludeHomeVideos;
         el('loopMode').value = ch.LoopMode || (ch.Shuffle === false ? 'Alphabetical' : 'Shuffle');
         el('episodeOrder').value = ch.ShuffleEpisodes ? 'random' : 'air';
+        el('interleaveOrder').value = ch.InterleaveOrder || 'Same';
         el('subtitleBurnIn').value = ch.SubtitleBurnIn || 'Never';
 
         currentEnabled = ch.Enabled !== false;
@@ -1207,6 +1208,7 @@ export default function (view) {
         ch.LoopMode = el('loopMode').value;
         ch.Shuffle = ch.LoopMode === 'Shuffle';
         ch.ShuffleEpisodes = el('episodeOrder').value === 'random';
+        ch.InterleaveOrder = el('interleaveOrder').value;
         ch.SubtitleBurnIn = el('subtitleBurnIn').value;
         readEntryOverridesFrom(ch);
         // Deprecated in v1.1.0.0 — the scheduler no longer reads these; explicitly zero them so a save doesn't
@@ -1385,7 +1387,7 @@ export default function (view) {
             Sources: [], AudioLanguage: '', RatingBlocks: [], TransitionWindowMinutes: 0, MinOfficialRating: '', MaxOfficialRating: '', IncludeUnrated: true, Category: 'None',
             KeepMultiPartTogether: true, EntryOverrides: [],
             IncludeEpisodes: true, IncludeMovies: true, IncludeSpecials: false, IncludeMusicVideos: true, IncludeHomeVideos: false, Shuffle: true, LoopMode: 'Shuffle', ShuffleEpisodes: false,
-            SubtitleBurnIn: 'Never', Enabled: true
+            InterleaveOrder: 'Same', SubtitleBurnIn: 'Never', Enabled: true
         });
         currentIndex = channels.length - 1;
         renderSelect();

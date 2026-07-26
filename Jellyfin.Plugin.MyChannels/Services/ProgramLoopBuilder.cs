@@ -18,12 +18,14 @@ namespace Jellyfin.Plugin.MyChannels.Services;
 /// <param name="Rotation">A counter (e.g. days since an epoch) that advances which block each group contributes
 /// first in a shuffled loop, so the channel walks through each series over time. Stable within a built schedule
 /// (guide and stream agree); the caller bumps it each refresh.</param>
+/// <param name="InterleaveOrder">How the shuffled loop orders its groups within each cycle: stable per channel every cycle (default), or shuffled per cycle so TNG/DS9/VOY on one cycle becomes DS9/VOY/TNG on the next.</param>
 public readonly record struct ChannelLoopOptions(
     bool KeepMultiPartTogether,
     LoopMode Mode,
     bool ShuffleEpisodes,
     string ChannelId,
-    int Rotation = 0);
+    int Rotation = 0,
+    InterleaveOrder InterleaveOrder = InterleaveOrder.Same);
 
 /// <summary>
 /// Turns a channel's resolved items into the ordered loop it cycles through: items are grouped by
@@ -132,10 +134,13 @@ public static class ProgramLoopBuilder
             return ordered.SelectMany(b => b.Items).ToList();
         }
 
-        // Weighted round-robin. Each group contributes `Weight` blocks per round, dealt in a stable per-channel
-        // order so the same group never plays twice in a row (its blocks are spread across rounds), and the
-        // rotation counter advances which of the group's blocks appear first, so the channel walks through each
-        // group across successive refreshes. Deterministic (seeded by channel id) so the guide and stream agree.
+        // Full-loop weighted round-robin. Every group contributes ALL its blocks per loop (shorter groups
+        // wrap and repeat blocks when they run out). Each cycle deals each group's `Weight` slots consecutively;
+        // the number of cycles = max over groups of ceil(blocks / weight) so the longest group airs its blocks
+        // exactly once and shorter groups fill their slots by wrapping. Group order per cycle is either stable
+        // per channel (InterleaveOrder.Same) or deterministically shuffled per cycle (InterleaveOrder.Shuffled).
+        // The rotation counter advances the starting block within each group so successive refreshes walk
+        // through the group instead of always beginning at block 0.
         var groups = blocks
             .GroupBy(b => b.GroupKey, StringComparer.Ordinal)
             .Select(g =>
@@ -144,37 +149,47 @@ public static class ProgramLoopBuilder
                 var weight = all[0].Weight;
                 var offset = (int)((uint)ShuffleKey(options.ChannelId, "rot:" + g.Key) % (uint)all.Count);
                 var start = (((options.Rotation + offset) % all.Count) + all.Count) % all.Count;
-                // A group with weight > blocks-available repeats its blocks in the window.
-                var window = new List<Block>(weight);
-                for (var k = 0; k < weight; k++)
-                {
-                    window.Add(all[(start + k) % all.Count]);
-                }
-
-                return (Ordered: window, Slots: weight);
+                return new GroupState(all, weight, start);
             })
+            .OrderBy(g => ShuffleKey(options.ChannelId, "order:" + g.Blocks[0].GroupKey))
             .ToList();
 
-        var maxRounds = groups.Max(g => g.Slots);
-        var placements = new List<(int Round, int Order, Block Block)>();
-        foreach (var g in groups)
+        var maxCycles = groups.Max(g => (int)Math.Ceiling((double)g.Blocks.Count / g.Weight));
+
+        var result = new List<ProgramEntry>();
+        for (var cycle = 0; cycle < maxCycles; cycle++)
         {
-            // A stable per-group order used in EVERY round, so each round deals the groups in the same sequence.
-            // That keeps the same group from straddling a round boundary (round N ends on a different group than
-            // round N+1 begins) — the only same-group run is the legitimate tail once all other groups run out.
-            var order = ShuffleKey(options.ChannelId, "order:" + g.Ordered[0].GroupKey);
-            for (var r = 0; r < g.Slots; r++)
+            var cycleOrder = options.InterleaveOrder == InterleaveOrder.Shuffled
+                ? ShuffleGroupsForCycle(groups, options.ChannelId, cycle)
+                : groups;
+
+            foreach (var g in cycleOrder)
             {
-                placements.Add((r, order, g.Ordered[r % g.Ordered.Count]));
+                for (var s = 0; s < g.Weight; s++)
+                {
+                    var idx = ((g.Start + (cycle * g.Weight) + s) % g.Blocks.Count + g.Blocks.Count) % g.Blocks.Count;
+                    result.AddRange(g.Blocks[idx].Items);
+                }
             }
         }
 
-        return placements
-            .OrderBy(p => p.Round)
-            .ThenBy(p => p.Order)
-            .ThenBy(p => p.Block.GroupKey, StringComparer.Ordinal)
-            .SelectMany(p => p.Block.Items)
-            .ToList();
+        return result;
+    }
+
+    // Deterministic per-cycle Fisher-Yates shuffle of the group order. Seed = channelId + cycle number, so
+    // the guide projection and the live stream both compute the same order for any given cycle.
+    private static List<GroupState> ShuffleGroupsForCycle(List<GroupState> stable, string channelId, int cycle)
+    {
+        var arr = stable.ToArray();
+        var seed = ShuffleKey(channelId, "cycle:" + cycle);
+        var rng = new Random(seed);
+        for (var i = arr.Length - 1; i > 0; i--)
+        {
+            var j = rng.Next(i + 1);
+            (arr[i], arr[j]) = (arr[j], arr[i]);
+        }
+
+        return arr.ToList();
     }
 
     // Groups consecutive episodes that share a base title and a part marker into one unit, so a two-parter is kept
@@ -290,4 +305,8 @@ public static class ProgramLoopBuilder
     }
 
     private sealed record Block(string GroupKey, string SortName, int Seq, int Weight, List<ProgramEntry> Items);
+
+    // Per-group state carried through the round-robin: its blocks (ordered by Seq), the number of slots it
+    // deals per cycle (Weight), and the rotation-shifted starting block index.
+    private sealed record GroupState(List<Block> Blocks, int Weight, int Start);
 }

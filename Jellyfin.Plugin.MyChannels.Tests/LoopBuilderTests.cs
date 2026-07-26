@@ -43,9 +43,10 @@ public class LoopBuilderTests
         };
 
     // Shorthand for building options. Block size and weight now live on entries; options only carries channel-wide
-    // ordering intent (mode, keep-multi-part, per-episode shuffle, channel id for seed, rotation counter).
-    private static ChannelLoopOptions Opts(bool keepMulti = true, LoopMode mode = LoopMode.Alphabetical, bool shuffleEp = false, string ch = "ch1", int rotation = 0)
-        => new ChannelLoopOptions(keepMulti, mode, shuffleEp, ch, rotation);
+    // ordering intent (mode, keep-multi-part, per-episode shuffle, channel id for seed, rotation counter,
+    // interleave order).
+    private static ChannelLoopOptions Opts(bool keepMulti = true, LoopMode mode = LoopMode.Alphabetical, bool shuffleEp = false, string ch = "ch1", int rotation = 0, InterleaveOrder interleave = InterleaveOrder.Same)
+        => new ChannelLoopOptions(keepMulti, mode, shuffleEp, ch, rotation, interleave);
 
     // Episode numbers of one series, in output order.
     private static List<int> EpisodeOrder(IReadOnlyList<ProgramEntry> loop, Guid seriesId)
@@ -134,6 +135,9 @@ public class LoopBuilderTests
     [Fact]
     public void MultiPart_BlockExtendsByAtMostOne_ThirdPartNotGlued()
     {
+        // A three-parter (1)(2)(3) with block size 2 must split into a pair block [1,2] and a singleton [3].
+        // Under full-loop semantics both blocks air, so total is 3 items; the invariant is that (1)(2) stay
+        // adjacent in the pair block and (3) is in its own block (not extending the pair to 3).
         var s = Guid.NewGuid();
         var loop = ProgramLoopBuilder.Build(new[]
         {
@@ -142,9 +146,12 @@ public class LoopBuilderTests
             Ep(s, "Show", 1, 3, "The Saga (3)", blockSize: 2)
         }, Opts(mode: LoopMode.Shuffle));
 
-        // With Weight=1 (default), only one block of the series is used per round → loop is capped at
-        // blockSize+1 episodes (a pair extending the block by one).
-        Assert.True(loop.Count <= 2, "a block glued more than a pair together: " + loop.Count);
+        Assert.Equal(3, loop.Count);
+        var order = loop.Select(e => e.EpisodeNumber).ToList();
+        var idx1 = order.IndexOf(1);
+        var idx2 = order.IndexOf(2);
+        Assert.True(idx1 >= 0 && idx2 == idx1 + 1,
+            "(1) and (2) must be adjacent (pair kept together): " + string.Join(",", order));
     }
 
     [Fact]
@@ -194,10 +201,12 @@ public class LoopBuilderTests
     }
 
     [Fact]
-    public void Shuffle_DefaultWeights_EachGroupContributesOneBlock()
+    public void Shuffle_DefaultWeights_LoopExhaustsAllBlocks_ShorterGroupsWrap()
     {
-        // Under default weight=1, each series contributes exactly ONE 4-episode block per loop -- so a giant series
-        // gets the same footing as smaller ones, and nothing plays back to back.
+        // Under default weight=1, one loop = enough cycles for the longest group's blocks to all air once.
+        // Big series (10 blocks) sets maxCycles = 10; each smaller series (5 blocks) wraps to fill 10 slots.
+        // Total = 5 groups × 10 slots × 4 eps = 200 items. No group ever plays two blocks back to back within
+        // a cycle (MaxRun capped at blockSize).
         var items = new List<ProgramEntry>();
         var big = new Guid("11111111-1111-1111-1111-111111111111");
         items.AddRange(Enumerable.Range(1, 40).Select(i => Ep(big, "Futurama", 1, i, "e" + i, blockSize: 4)));
@@ -209,16 +218,17 @@ public class LoopBuilderTests
 
         var loop = ProgramLoopBuilder.Build(items, Opts(mode: LoopMode.Shuffle));
 
-        Assert.Equal(5 * 4, loop.Count);
-        Assert.Equal(4, loop.Count(e => e.SeriesId == big));
-        Assert.True(MaxRun(loop) <= 4, "a series ran longer than one block: " + MaxRun(loop));
+        Assert.Equal(200, loop.Count);
+        Assert.Equal(40, loop.Count(e => e.SeriesId == big));       // big series airs all 40 eps once
+        Assert.Equal(40, loop.Count(e => e.SeriesId == new Guid("22222220-2222-2222-2222-222222222222"))); // small wraps to 40 (2x each block)
+        Assert.True(MaxRun(loop) <= 4, "a series ran longer than one block within a cycle: " + MaxRun(loop));
     }
 
     [Fact]
-    public void PerEntryWeight_MultipliesSlotsInRoundRobin()
+    public void PerEntryWeight_MultipliesSlotsPerCycle()
     {
-        // Three series with weights 3, 2, 1 → over a full round the loop contains 3+2+1 = 6 blocks; the weight-3
-        // series contributes 3 blocks, weight-2 contributes 2, weight-1 contributes 1.
+        // Three series (10 blocks each, blockSize=1) with weights 3, 2, 1. maxCycles = max(ceil(10/3), ceil(10/2),
+        // ceil(10/1)) = 10. Each group's total slots = weight × maxCycles: A=30, B=20, C=10. Ratio 3:2:1.
         var a = new Guid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
         var b = new Guid("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
         var c = new Guid("cccccccc-cccc-cccc-cccc-cccccccccccc");
@@ -229,16 +239,17 @@ public class LoopBuilderTests
 
         var loop = ProgramLoopBuilder.Build(items, Opts(mode: LoopMode.Shuffle));
 
-        Assert.Equal(3, loop.Count(e => e.SeriesId == a));
-        Assert.Equal(2, loop.Count(e => e.SeriesId == b));
-        Assert.Equal(1, loop.Count(e => e.SeriesId == c));
+        Assert.Equal(30, loop.Count(e => e.SeriesId == a));
+        Assert.Equal(20, loop.Count(e => e.SeriesId == b));
+        Assert.Equal(10, loop.Count(e => e.SeriesId == c));
     }
 
     [Fact]
     public void PerEntryBlockSize_DifferentiatesBlockSizes()
     {
-        // Series A with blockSize=3 packs 3 episodes per block; series B with blockSize=1 packs one. With default
-        // weight=1 both contribute one block per round, so a full loop is 3 + 1 = 4 items.
+        // Series A with blockSize=3 packs 3 episodes per block → 2 blocks; series B with blockSize=1 packs one →
+        // 6 blocks. Weight=1 both. maxCycles = max(2, 6) = 6 cycles. A slots = 1×6 = 6, wrapping through its 2
+        // blocks (each block airs 3×), giving 6 × 3 eps = 18 eps of A. B slots = 1×6 = 6 blocks × 1 ep = 6 eps.
         var a = new Guid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
         var b = new Guid("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
         var items = new List<ProgramEntry>();
@@ -247,8 +258,8 @@ public class LoopBuilderTests
 
         var loop = ProgramLoopBuilder.Build(items, Opts(mode: LoopMode.Shuffle));
 
-        Assert.Equal(3, loop.Count(e => e.SeriesId == a));
-        Assert.Equal(1, loop.Count(e => e.SeriesId == b));
+        Assert.Equal(18, loop.Count(e => e.SeriesId == a));
+        Assert.Equal(6, loop.Count(e => e.SeriesId == b));
     }
 
     [Fact]
@@ -266,8 +277,10 @@ public class LoopBuilderTests
     [Fact]
     public void Overrides_SharedTopLevelSharesWeight()
     {
-        // Two episodes of one series share TopLevelItemId (the series id), so they inherit the same weight and
-        // block size as a single group. Setting weight=4 on both episodes means the group's weight is 4.
+        // Two episodes of one series share TopLevelItemId (the series id) so they inherit the same weight and
+        // block size as one group. Series has 2 blocks, weight=4 → ceil(2/4) = 1 cycle. Movie: 1 block, weight=1
+        // → ceil(1/1) = 1 cycle. maxCycles = 1. Series slots = 4×1 = 4 (wraps through its 2 blocks 2×). Movie
+        // slot = 1. Total = 5 items.
         var s = Guid.NewGuid();
         var items = new[]
         {
@@ -278,8 +291,6 @@ public class LoopBuilderTests
 
         var loop = ProgramLoopBuilder.Build(items, Opts(mode: LoopMode.Shuffle));
 
-        // Series has 2 blocks available, weight=4 → window wraps: 4 slots that cycle through the 2 blocks. Plus 1
-        // movie slot. Total = 5 slots.
         Assert.Equal(5, loop.Count);
         Assert.Equal(4, loop.Count(e => e.SeriesId == s));
     }
@@ -287,7 +298,9 @@ public class LoopBuilderTests
     [Fact]
     public void PerEntryWeight_MoviesFavored_OutnumberSeries()
     {
-        // Four movies at weight=6 against one series at weight=1: movies dominate the loop.
+        // Four movies at weight=6 (each = 1 block) against a 4-ep series at weight=1 blockSize=1 (4 blocks).
+        // maxCycles = max(ceil(1/6)=1, ceil(4/1)=4) = 4. Movies each get 6×4 = 24 slots (wraps 24× through
+        // their single block). Series gets 1×4 = 4 slots. Movies dominate 24 : 1 per movie.
         var items = new List<ProgramEntry>();
         for (var i = 0; i < 4; i++)
         {
@@ -295,14 +308,14 @@ public class LoopBuilderTests
         }
 
         var show = new Guid("33333333-3333-3333-3333-333333333333");
-        items.AddRange(Enumerable.Range(1, 40).Select(i => Ep(show, "Show", 1, i, "e" + i, weight: 1, blockSize: 1)));
+        items.AddRange(Enumerable.Range(1, 4).Select(i => Ep(show, "Show", 1, i, "e" + i, weight: 1, blockSize: 1)));
 
         var loop = ProgramLoopBuilder.Build(items, Opts(mode: LoopMode.Shuffle));
 
         var movieSlots = loop.Count(e => e.SeriesId is null);
         var showSlots = loop.Count(e => e.SeriesId == show);
-        Assert.Equal(4 * 6, movieSlots);          // 4 movies × weight 6 = 24 slots
-        Assert.Equal(1, showSlots);               // series weight 1 = one block of 1 episode
+        Assert.Equal(4 * 6 * 4, movieSlots);      // 4 movies × weight 6 × 4 cycles = 96 slots
+        Assert.Equal(4, showSlots);               // series 1×4 = 4 slots
         Assert.True(movieSlots > showSlots);
     }
 
@@ -342,6 +355,107 @@ public class LoopBuilderTests
 
         var loop = ProgramLoopBuilder.Build(items, Opts(mode: LoopMode.Chronological));
         Assert.Equal(new[] { "Old", "Mid", "New" }, loop.Select(e => e.Title).ToArray());
+    }
+
+    [Fact]
+    public void Interleave_Same_UsesStableOrderEveryCycle()
+    {
+        // Three series, weight=1 each, 4 blocks each (blockSize=1). maxCycles = 4. Under Same interleave the
+        // group order is stable per-channel across cycles: the sequence of top-level ids in the loop should be
+        // (A B C) repeated 4 times where A/B/C are some stable permutation.
+        var a = new Guid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var b = new Guid("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var c = new Guid("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var items = new List<ProgramEntry>();
+        items.AddRange(Enumerable.Range(1, 4).Select(i => Ep(a, "Alpha", 1, i, "a" + i, blockSize: 1)));
+        items.AddRange(Enumerable.Range(1, 4).Select(i => Ep(b, "Bravo", 1, i, "b" + i, blockSize: 1)));
+        items.AddRange(Enumerable.Range(1, 4).Select(i => Ep(c, "Charlie", 1, i, "c" + i, blockSize: 1)));
+
+        var loop = ProgramLoopBuilder.Build(items, Opts(mode: LoopMode.Shuffle, interleave: InterleaveOrder.Same));
+
+        Assert.Equal(12, loop.Count);
+        // The first 3 items reveal the stable order. Cycles 2, 3, 4 must repeat it.
+        var cycle1 = loop.Take(3).Select(e => e.TopLevelItemId).ToArray();
+        for (var c1 = 1; c1 < 4; c1++)
+        {
+            var cyc = loop.Skip(c1 * 3).Take(3).Select(e => e.TopLevelItemId).ToArray();
+            Assert.Equal(cycle1, cyc);
+        }
+    }
+
+    [Fact]
+    public void Interleave_Shuffled_VariesOrderAcrossCycles()
+    {
+        // Same setup as above, but InterleaveOrder.Shuffled reshuffles the group order per cycle. At least one
+        // cycle should differ from cycle 1 (probability of 4 identical shuffles by chance is ~1/1296).
+        var a = new Guid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var b = new Guid("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var c = new Guid("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var items = new List<ProgramEntry>();
+        items.AddRange(Enumerable.Range(1, 4).Select(i => Ep(a, "Alpha", 1, i, "a" + i, blockSize: 1)));
+        items.AddRange(Enumerable.Range(1, 4).Select(i => Ep(b, "Bravo", 1, i, "b" + i, blockSize: 1)));
+        items.AddRange(Enumerable.Range(1, 4).Select(i => Ep(c, "Charlie", 1, i, "c" + i, blockSize: 1)));
+
+        var loop = ProgramLoopBuilder.Build(items, Opts(mode: LoopMode.Shuffle, interleave: InterleaveOrder.Shuffled));
+
+        Assert.Equal(12, loop.Count);
+        var cycles = Enumerable.Range(0, 4)
+            .Select(i => loop.Skip(i * 3).Take(3).Select(e => e.TopLevelItemId).ToArray())
+            .ToList();
+        var distinct = cycles.Distinct(new ArrayComparer<Guid>()).Count();
+        Assert.True(distinct > 1, "interleave=Shuffled should produce more than one distinct cycle order across 4 cycles");
+    }
+
+    [Fact]
+    public void Interleave_Shuffled_IsDeterministic()
+    {
+        // Same input twice under Shuffled interleave: same output. The per-cycle shuffle is seeded by channel id
+        // + cycle number so the guide projection and the live stream compute the same order.
+        var a = new Guid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var b = new Guid("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var items = new List<ProgramEntry>();
+        items.AddRange(Enumerable.Range(1, 4).Select(i => Ep(a, "Alpha", 1, i, "a" + i, blockSize: 1)));
+        items.AddRange(Enumerable.Range(1, 4).Select(i => Ep(b, "Bravo", 1, i, "b" + i, blockSize: 1)));
+
+        var loop1 = ProgramLoopBuilder.Build(items, Opts(mode: LoopMode.Shuffle, interleave: InterleaveOrder.Shuffled));
+        var loop2 = ProgramLoopBuilder.Build(items, Opts(mode: LoopMode.Shuffle, interleave: InterleaveOrder.Shuffled));
+
+        Assert.Equal(loop1.Select(e => e.ItemId), loop2.Select(e => e.ItemId));
+    }
+
+    [Fact]
+    public void Loop_ExhaustsShortestByWrapping()
+    {
+        // Two groups with mismatched sizes: A has 8 blocks (blockSize=1), B has 3 blocks. Weight=1 both.
+        // maxCycles = max(8, 3) = 8. A airs each block once (8 slots). B wraps to fill 8 slots (each of its 3
+        // blocks airs 8/3 = 2 or 3 times, deterministically).
+        var a = new Guid("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var b = new Guid("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var items = new List<ProgramEntry>();
+        items.AddRange(Enumerable.Range(1, 8).Select(i => Ep(a, "Alpha", 1, i, "a" + i, blockSize: 1)));
+        items.AddRange(Enumerable.Range(1, 3).Select(i => Ep(b, "Bravo", 1, i, "b" + i, blockSize: 1)));
+
+        var loop = ProgramLoopBuilder.Build(items, Opts(mode: LoopMode.Shuffle));
+
+        Assert.Equal(16, loop.Count);
+        Assert.Equal(8, loop.Count(e => e.SeriesId == a));   // all 8 A blocks aired once each
+        Assert.Equal(8, loop.Count(e => e.SeriesId == b));   // B slots = 8 (wraps through 3 blocks)
+    }
+
+    // Helper for comparing arrays as sequence-equal values inside a HashSet/Distinct.
+    private sealed class ArrayComparer<T> : IEqualityComparer<T[]>
+    {
+        public bool Equals(T[]? x, T[]? y)
+            => x is null ? y is null : y is not null && x.SequenceEqual(y);
+        public int GetHashCode(T[] obj)
+        {
+            unchecked
+            {
+                var h = 17;
+                foreach (var v in obj) h = h * 31 + (v?.GetHashCode() ?? 0);
+                return h;
+            }
+        }
     }
 
     [Fact]

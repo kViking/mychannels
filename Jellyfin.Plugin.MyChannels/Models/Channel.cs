@@ -105,6 +105,9 @@ public class Channel
     /// <summary>Gets or sets a value indicating whether episodes within a series are shuffled rather than played in air order.</summary>
     public bool ShuffleEpisodes { get; set; }
 
+    /// <summary>Gets or sets how the shuffled loop orders its groups within each round-robin cycle: stable per channel every cycle, or shuffled per cycle so the interleave pattern varies as the loop progresses.</summary>
+    public InterleaveOrder InterleaveOrder { get; set; } = InterleaveOrder.Same;
+
     /// <summary>Gets or sets the content type the channel weights more heavily in its (shuffled) loop, or <see cref="Models.FavorKind.None"/>. Deprecated in v1.1.0.0 in favour of per-entry <see cref="EntryOverride.Weight"/>; scheduler ignores this field. A one-time startup migration in Plugin.cs synthesises equivalent EntryOverrides from any legacy non-None value.</summary>
     public FavorKind FavorKind { get; set; } = FavorKind.None;
 

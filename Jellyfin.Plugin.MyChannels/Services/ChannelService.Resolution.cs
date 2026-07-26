@@ -337,7 +337,8 @@ public partial class ChannelService
             channel.EffectiveLoopMode(),
             channel.ShuffleEpisodes,
             channel.Id,
-            LoopRotation());
+            LoopRotation(),
+            channel.InterleaveOrder);
 
         return ProgramLoopBuilder.Build(entries, options);
     }

@@ -285,6 +285,14 @@
                                     </select>
                                     <div class="fieldDescription">How the channel arranges its content. Chronological plays oldest to newest by release date.</div>
                                 </div>
+                                <div class="selectContainer">
+                                    <label class="selectLabel" for="interleaveOrder">Series interleave</label>
+                                    <select id="interleaveOrder" class="jpk-selector-dropdown">
+                                        <option value="Same">Same order every cycle</option>
+                                        <option value="Shuffled">Shuffle order each cycle</option>
+                                    </select>
+                                    <div class="fieldDescription">Only used when loop order is Shuffle. Same interleaves groups in the same stable order every cycle (TNG, DS9, VOY, TNG, DS9, VOY, …). Shuffled reshuffles the group order each cycle (TNG, DS9, VOY, then DS9, VOY, TNG, …).</div>
+                                </div>
                             </div>
                         </div>
 
