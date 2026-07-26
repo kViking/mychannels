@@ -9,6 +9,14 @@
     "category": "LiveTV",
     "versions": [
       {
+        "version": "1.2.1.0",
+        "changelog": "SnapToBoundary cards use a truncation model: one card file per program at the max pad length (SnapMinutes), trimmed at stream time to the actual pad needed. Card set stays bounded (one per program) regardless of loop reshuffles or rotation shifts — no combinatorial explosion. Channels with FillerMode=SnapToBoundary automatically use the per-item stream pipeline (concat mode can't truncate).",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/kViking/mychannels/releases/download/v1.2.1.0/mychannels-1.2.1.0.zip",
+        "checksum": "792b9faa6fa5457e4ff3bcdfad2070be",
+        "timestamp": "2026-07-26T11:31:41Z"
+      },
+      {
         "version": "1.2.0.2",
         "changelog": "Filler generation is now lazy and polite. AutoCardService.EnsureCard is a pure cache lookup; a separate Preheat schedules background generation. Each resolve preheats at most the first 3 missing cards, so channels with dozens of programs don't spawn dozens of ffmpegs. Successive RefreshGuide passes pick up more as needed, and cards for programs that never actually air never get generated. Background ffmpegs run at Idle priority (nice ~19 on Linux) with a concurrency of 1, so on shared hosting they never contend with a viewer's live-stream encoder.",
         "targetAbi": "10.11.9.0",
