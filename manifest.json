@@ -9,6 +9,14 @@
     "category": "LiveTV",
     "versions": [
       {
+        "version": "1.1.1.0",
+        "changelog": "Full-loop scheduling: each shuffled loop now airs every top-level item's blocks (shorter groups wrap and repeat when they run out). New Series interleave setting: Same keeps the group deal order stable across cycles (TNG, DS9, VOY every cycle); Shuffled reshuffles the order per cycle (TNG, DS9, VOY then DS9, VOY, TNG). Both deterministic — guide and stream agree.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/kViking/mychannels/releases/download/v1.1.1.0/mychannels-1.1.1.0.zip",
+        "checksum": "c3e5fdb5d49a795b4904615c672a9cea",
+        "timestamp": "2026-07-26T10:21:32Z"
+      },
+      {
         "version": "1.1.0.1",
         "changelog": "Rework the Content Weights section to use the same jpk-collapsible-section pattern as every other folded section on the channels page. The v1.1.0.0 implementation used a different pattern that didn't wire up correctly against the shared collapsible handler.",
         "targetAbi": "10.11.9.0",
