@@ -290,13 +290,14 @@
 
                         <!-- Content weights: per-top-level-item Weight and BlockSize overrides. Rows populated
                              from a POST to /livechannels/channels/resolve-top-level. Sparse: only tweaked rows
-                             are persisted to Channel.EntryOverrides. -->
-                        <div class="jpk-section jpk-collapsible" id="sectionEntryOverrides">
-                            <button is="emby-button" type="button" class="jpk-collapsible-header raised block">
-                                <span class="material-icons expand-icon" aria-hidden="true">chevron_right</span>
-                                <span>Content weights</span>
+                             are persisted to Channel.EntryOverrides. Uses the same collapsible pattern as the
+                             other sections on this page (Shared.initCollapsibles wires the header toggle). -->
+                        <div class="jpk-collapsible-section">
+                            <button type="button" class="jpk-collapsible-header collapsed" aria-expanded="false" data-target="sectionEntryOverrides">
+                                <span class="jpk-collapsible-title">Content weights</span>
+                                <span class="jpk-collapsible-icon">&#9660;</span>
                             </button>
-                            <div class="jpk-collapsible-body">
+                            <div id="sectionEntryOverrides" class="jpk-collapsible-content collapsed">
                                 <div class="fieldDescription">
                                     Per-item weight and block size for the channel's top-level items (series, movies, collections).
                                     Weight controls how often the item plays (default 1). Block size sets how many consecutive episodes of a series air together (default 1).
