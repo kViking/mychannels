@@ -9,6 +9,14 @@
     "category": "LiveTV",
     "versions": [
       {
+        "version": "1.1.1.1",
+        "changelog": "Content Weights UI: switch Weight and Block-size inputs from number spinners to dropdowns (0-10 weight, 1-6 block). Movie/music-video rows now show a disabled Block dropdown so they line up visually with series/collection rows instead of ragging short. Unknown stored values are added as extra options so nothing round-trips wrong.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/kViking/mychannels/releases/download/v1.1.1.1/mychannels-1.1.1.1.zip",
+        "checksum": "396bb9c298f1201228719c9ef0fe1016",
+        "timestamp": "2026-07-26T10:57:07Z"
+      },
+      {
         "version": "1.1.1.0",
         "changelog": "Full-loop scheduling: each shuffled loop now airs every top-level item's blocks (shorter groups wrap and repeat when they run out). New Series interleave setting: Same keeps the group deal order stable across cycles (TNG, DS9, VOY every cycle); Shuffled reshuffles the order per cycle (TNG, DS9, VOY then DS9, VOY, TNG). Both deterministic — guide and stream agree.",
         "targetAbi": "10.11.9.0",
