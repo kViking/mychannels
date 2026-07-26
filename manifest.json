@@ -9,6 +9,14 @@
     "category": "LiveTV",
     "versions": [
       {
+        "version": "1.2.0.0",
+        "changelog": "Filler subsystem: new per-channel Auto Up Next card setting. Off (default), FixedBumper (short card before every program), or SnapToBoundary (variable-length card that pads program-end to the next 15/30/60-minute grid so programs start on tidy times like broadcast TV). Cards show the next program's backdrop with an 'Up Next' overlay + a subtle Ken Burns zoom to fight burn-in during long slates. Cached to disk; generated once per (program, duration).",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/kViking/mychannels/releases/download/v1.2.0.0/mychannels-1.2.0.0.zip",
+        "checksum": "b30bba55e81f37c5169a5d828d44c50a",
+        "timestamp": "2026-07-26T11:03:51Z"
+      },
+      {
         "version": "1.1.1.1",
         "changelog": "Content Weights UI: switch Weight and Block-size inputs from number spinners to dropdowns (0-10 weight, 1-6 block). Movie/music-video rows now show a disabled Block dropdown so they line up visually with series/collection rows instead of ragging short. Unknown stored values are added as extra options so nothing round-trips wrong.",
         "targetAbi": "10.11.9.0",
