@@ -1,7 +1,7 @@
 ---
 name: "MyChannels"
 guid: "65679cc2-98ed-419b-bc2c-b0110ffc0394"
-version: "1.2.0.1"
+version: "1.2.0.2"
 targetAbi: "10.11.9.0"
 framework: "net9.0"
 overview: "Fork of JPKribs Live Channels with an expanded scheduling model and filler support."
@@ -17,4 +17,4 @@ artifacts:
 - "Jellyfin.Plugin.MyChannels.dll"
 changelog:
   developer:
-  - Hotfix for v1.2.0.0: card generation moves fully off the tune-in critical path. A tune-in used to try to generate every missing card synchronously before the stream could start, blowing past ffmpeg timeouts and killing the whole session. Cards now generate in the background with a small concurrency cap; missing cards on a first tune-in are simply skipped, and they appear on the next resolve pass. Subsequent tune-ins with cached cards behave exactly as designed.
+  - Filler generation is now lazy and polite. AutoCardService.EnsureCard is a pure cache lookup; a separate Preheat schedules background generation. Each resolve preheats at most the first 3 missing cards, so channels with dozens of programs don't spawn dozens of ffmpegs. Successive RefreshGuide passes pick up more as needed, and cards for programs that never actually air never get generated. Background ffmpegs run at Idle priority (nice ~19 on Linux) with a concurrency of 1, so on shared hosting they never contend with a viewer's live-stream encoder.

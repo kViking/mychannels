@@ -345,17 +345,21 @@ public partial class ChannelService
     }
 
     // Interleaves auto Up Next cards into a raw loop, one before every program, based on the channel's
-    // FillerMode. FixedBumper: every card is Channel.BumperSeconds long. SnapToBoundary: each card fills
-    // the pad needed to bring the previous program's slot up to the next Channel.SnapMinutes multiple, so
-    // programs start on tidy times. Cards are generated on demand by AutoCardService and cached to disk;
-    // a missing card (generation failure or slate size 0) is silently dropped and the next program plays
-    // directly.
+    // FillerMode. Cards are inserted only when their MP4 is already cached (EnsureCard is a fast lookup,
+    // never generates). For the first few missing cards we kick off background generation (nice priority,
+    // one at a time), so subsequent resolves pick them up. This lazy approach avoids generating cards for
+    // programs that never air on shared hosting where we can only afford a handful of ffmpeg processes.
     private IReadOnlyList<ProgramEntry> InjectFillerCards(Channel channel, IReadOnlyList<ProgramEntry> loop)
     {
         if (loop.Count == 0)
         {
             return loop;
         }
+
+        // Only preheat this many missing cards per resolve. RefreshGuide re-runs regularly, so any card
+        // still missing after a resolve will get another chance next time. Small budget = kind to the box.
+        const int PreheatBudget = 3;
+        var preheatRemaining = PreheatBudget;
 
         var result = new List<ProgramEntry>(loop.Count * 2);
         long? previousDurationTicks = null;
@@ -369,6 +373,11 @@ public partial class ChannelService
                 if (!string.IsNullOrEmpty(cardPath))
                 {
                     result.Add(BuildCardEntry(program, cardTicks, cardPath));
+                }
+                else if (preheatRemaining > 0)
+                {
+                    _autoCardService.Preheat(channel.Id, program, TimeSpan.FromTicks(cardTicks));
+                    preheatRemaining--;
                 }
             }
 
