@@ -9,6 +9,14 @@
     "category": "LiveTV",
     "versions": [
       {
+        "version": "1.1.0.1",
+        "changelog": "Rework the Content Weights section to use the same jpk-collapsible-section pattern as every other folded section on the channels page. The v1.1.0.0 implementation used a different pattern that didn't wire up correctly against the shared collapsible handler.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/kViking/mychannels/releases/download/v1.1.0.1/mychannels-1.1.0.1.zip",
+        "checksum": "5680c5ca236f989553c8c7ee6665a00e",
+        "timestamp": "2026-07-26T01:05:26Z"
+      },
+      {
         "version": "1.1.0.0",
         "changelog": "Scheduling rewrite. Weight and Block-size are now set per top-level item in the channel (series, movie, collection) rather than as channel-wide FavorKind/EpisodesPerBlock knobs. Editor gains a Content Weights section that lists the resolved items with per-row inputs. FavorKind/FavorStrength/EpisodesPerBlock are deprecated (ignored by the scheduler and hidden from the UI; kept in the model for one release for XML round-trip). A warning is logged on plugin load for any channel that still carries a legacy FavorKind so you can set per-entry weights instead.",
         "targetAbi": "10.11.9.0",
