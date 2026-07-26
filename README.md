@@ -7,12 +7,10 @@
 
 ## Honest disclaimer
 
-This is a **vibe-coded personal fork**. "Personal" as in *mine* — this exists because I want features JPKribs' plugin doesn't have yet and don't want to wait or file a PR I can't guarantee I'll follow through on. I'm not trying to replace the upstream or take credit for JPKribs' work; MyChannels is downstream of it and always will be.
+This is a **vibe-coded personal fork**. "Personal" as in *mine* — this exists because I want features JPKribs' plugin doesn't have yet and my solution was to vibe code it. It's garbage, y'all- not real IP. 
 
-- **No guarantees, no support, no promises.** It might break your Jellyfin install. Test in something you don't care about first.
-- **Public because it must be** — GPL v3 requires source availability for anything distributed, and installing a plugin via a manifest counts. Also because there's no reason to hide it.
 - **Not seeking users.** If you want the reliable, maintained thing, use [the upstream plugin](https://github.com/JPKribs/jellyfin-plugin-livechannels). This is here for me and anyone who wants to poke at the roadmap ideas.
-- **AI-assisted (Claude Code) throughout.** Code review is on me; bugs are on me.
+- **AI-assisted (Claude Code) throughout.** Code review is on me; bugs are on me; I basically am doing none
 
 Roadmap and design intent: [`DESIGN.md`](DESIGN.md).
 
