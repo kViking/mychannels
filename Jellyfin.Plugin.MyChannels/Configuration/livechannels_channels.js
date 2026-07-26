@@ -1057,14 +1057,15 @@ export default function (view) {
             var kindLabel = r.kind || '';
             var childHint = r.childCount ? ' (' + r.childCount + ')' : '';
             var canBlock = r.kind === 'Series' || r.kind === 'Season' || r.kind === 'Collection';
+            var weightVal = (ov && ov.Weight != null) ? ov.Weight : 1;
+            var blockVal = (ov && ov.BlockSize != null) ? ov.BlockSize : 1;
             row.innerHTML =
                 '<span class="mych-eo-name" title="' + escapeAttr(r.name) + '">' + escapeText(r.name) +
                 '<span class="mych-eo-kind">' + escapeText(kindLabel + childHint) + '</span></span>' +
                 '<span class="mych-eo-input-label">Weight</span>' +
-                '<input type="number" class="mych-eo-input mych-eo-weight" min="0" step="1" value="' + (ov && ov.Weight ? ov.Weight : 1) + '" />' +
-                (canBlock
-                    ? '<span class="mych-eo-input-label">Block</span><input type="number" class="mych-eo-input mych-eo-blocksize" min="1" step="1" value="' + (ov && ov.BlockSize ? ov.BlockSize : 1) + '" />'
-                    : '');
+                buildWeightSelect(weightVal) +
+                '<span class="mych-eo-input-label">Block</span>' +
+                buildBlockSelect(blockVal, canBlock);
             host.appendChild(row);
         });
 
@@ -1094,6 +1095,34 @@ export default function (view) {
         }
     }
 
+    // Builds the Weight dropdown. Values 0-10 cover the sensible range (0 = benched); if the stored value is
+    // outside that (e.g. imported from a custom setting), add it as an extra option so it round-trips.
+    function buildWeightSelect(current) {
+        var opts = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        if (opts.indexOf(current) === -1) opts.push(current);
+        opts.sort(function (a, b) { return a - b; });
+        return '<select class="mych-eo-input mych-eo-weight">' +
+            opts.map(function (v) {
+                var label = v === 0 ? 'Benched (0)' : String(v);
+                return '<option value="' + v + '"' + (v === current ? ' selected' : '') + '>' + label + '</option>';
+            }).join('') +
+            '</select>';
+    }
+
+    // Builds the Block dropdown. Disabled/hidden-value for non-series/non-collection rows so movie rows align
+    // visually with series rows.
+    function buildBlockSelect(current, enabled) {
+        var opts = [1, 2, 3, 4, 5, 6];
+        if (opts.indexOf(current) === -1) opts.push(current);
+        opts.sort(function (a, b) { return a - b; });
+        var attrs = enabled ? '' : ' disabled title="Block size only applies to series, seasons, or collections"';
+        return '<select class="mych-eo-input mych-eo-blocksize"' + attrs + '>' +
+            opts.map(function (v) {
+                return '<option value="' + v + '"' + (v === current ? ' selected' : '') + '>' + v + '</option>';
+            }).join('') +
+            '</select>';
+    }
+
     // Reads the rendered rows back into a sparse EntryOverrides list. Any row at default (weight=1, blockSize=1)
     // is pruned. Orphans in ch.EntryOverrides that the user didn't remove are preserved.
     function readEntryOverridesFrom(channel) {
@@ -1105,7 +1134,7 @@ export default function (view) {
             var weight = parseInt(row.querySelector('.mych-eo-weight').value, 10);
             if (isNaN(weight) || weight < 0) weight = 1;
             var blockInput = row.querySelector('.mych-eo-blocksize');
-            var blockSize = blockInput ? parseInt(blockInput.value, 10) : 1;
+            var blockSize = blockInput && !blockInput.disabled ? parseInt(blockInput.value, 10) : 1;
             if (isNaN(blockSize) || blockSize < 1) blockSize = 1;
             if (weight !== 1 || blockSize !== 1) {
                 var entry = { ItemId: id };

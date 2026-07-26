@@ -1,7 +1,7 @@
 ---
 name: "MyChannels"
 guid: "65679cc2-98ed-419b-bc2c-b0110ffc0394"
-version: "1.1.1.0"
+version: "1.1.1.1"
 targetAbi: "10.11.9.0"
 framework: "net9.0"
 overview: "Fork of JPKribs Live Channels with an expanded scheduling model and filler support."
@@ -17,5 +17,4 @@ artifacts:
 - "Jellyfin.Plugin.MyChannels.dll"
 changelog:
   developer:
-  - Full-loop scheduling. Each shuffled loop now airs every top-level item's blocks (shorter groups wrap and repeat blocks when they run out) instead of contributing just one block per loop. Loop length = weight x cycles, where cycles = the longest group's ceil(blocks / weight).
-  - New Series interleave setting on the channel. Same keeps the group deal order stable across cycles (TNG, DS9, VOY every cycle). Shuffled reshuffles the order per cycle (TNG, DS9, VOY then DS9, VOY, TNG). Both deterministic (guide and stream agree).
+  - Content Weights UI: switch Weight and Block-size inputs from number spinners to dropdowns (0-10 weight, 1-6 block). Movie/music-video rows now show a disabled Block dropdown so they line up visually with series/collection rows instead of ragging short. Unknown stored values are added as extra options so nothing round-trips wrong.
