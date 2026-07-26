@@ -293,6 +293,33 @@
                                     </select>
                                     <div class="fieldDescription">Only used when loop order is Shuffle. Same interleaves groups in the same stable order every cycle (TNG, DS9, VOY, TNG, DS9, VOY, …). Shuffled reshuffles the group order each cycle (TNG, DS9, VOY, then DS9, VOY, TNG, …).</div>
                                 </div>
+                                <h3 class="jpk-subsection-title">Between programs</h3>
+                                <div class="selectContainer">
+                                    <label class="selectLabel" for="fillerMode">Auto Up Next card</label>
+                                    <select id="fillerMode" class="jpk-selector-dropdown">
+                                        <option value="Off">Off — programs air back-to-back</option>
+                                        <option value="FixedBumper">Fixed bumper before every program</option>
+                                        <option value="SnapToBoundary">Snap program starts to a grid</option>
+                                    </select>
+                                    <div class="fieldDescription">Inserts an auto-generated card between programs, showing the next program's backdrop with an "Up Next" title overlay. Cards are cached and rendered once per program.</div>
+                                </div>
+                                <div id="bumperSecondsGroup" class="jpk-indent hidden">
+                                    <div class="inputContainer">
+                                        <label for="bumperSeconds">Bumper length (seconds)</label>
+                                        <input is="emby-input" type="number" id="bumperSeconds" min="5" max="60" step="1" autocomplete="off" />
+                                    </div>
+                                </div>
+                                <div id="snapMinutesGroup" class="jpk-indent hidden">
+                                    <div class="selectContainer">
+                                        <label class="selectLabel" for="snapMinutes">Grid interval</label>
+                                        <select id="snapMinutes" class="jpk-selector-dropdown">
+                                            <option value="15">15 minutes</option>
+                                            <option value="30">30 minutes</option>
+                                            <option value="60">60 minutes</option>
+                                        </select>
+                                        <div class="fieldDescription">Programs are padded with an Up Next card to land on the next multiple of this interval. A 44-minute show followed by 16 minutes of card gives you a 60-minute slot starting on the hour.</div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 

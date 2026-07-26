@@ -37,6 +37,14 @@ export default function (view) {
 
     function el(id) { return view.querySelector('#' + id); }
 
+    // Shows the per-mode input group for the current filler selection (bumper length for FixedBumper,
+    // grid interval for SnapToBoundary). Off hides both.
+    function updateFillerControls() {
+        var mode = el('fillerMode').value;
+        el('bumperSecondsGroup').classList.toggle('hidden', mode !== 'FixedBumper');
+        el('snapMinutesGroup').classList.toggle('hidden', mode !== 'SnapToBoundary');
+    }
+
     // Parses the Years field into a sorted, de-duplicated list of production years. Accepts individual years and
     // ranges (e.g. "1990-1999, 2005" or "1990 1991 1992"), so a decade is two keystrokes rather than ten entries.
     // Anything outside a sane 1850-2200 band is dropped.
@@ -1191,6 +1199,10 @@ export default function (view) {
         el('loopMode').value = ch.LoopMode || (ch.Shuffle === false ? 'Alphabetical' : 'Shuffle');
         el('episodeOrder').value = ch.ShuffleEpisodes ? 'random' : 'air';
         el('interleaveOrder').value = ch.InterleaveOrder || 'Same';
+        el('fillerMode').value = ch.FillerMode || 'Off';
+        el('bumperSeconds').value = ch.BumperSeconds || 15;
+        el('snapMinutes').value = ch.SnapMinutes || 30;
+        updateFillerControls();
         el('subtitleBurnIn').value = ch.SubtitleBurnIn || 'Never';
 
         currentEnabled = ch.Enabled !== false;
@@ -1238,6 +1250,9 @@ export default function (view) {
         ch.Shuffle = ch.LoopMode === 'Shuffle';
         ch.ShuffleEpisodes = el('episodeOrder').value === 'random';
         ch.InterleaveOrder = el('interleaveOrder').value;
+        ch.FillerMode = el('fillerMode').value;
+        ch.BumperSeconds = Math.max(5, Math.min(60, parseInt(el('bumperSeconds').value, 10) || 15));
+        ch.SnapMinutes = parseInt(el('snapMinutes').value, 10) || 30;
         ch.SubtitleBurnIn = el('subtitleBurnIn').value;
         readEntryOverridesFrom(ch);
         // Deprecated in v1.1.0.0 — the scheduler no longer reads these; explicitly zero them so a save doesn't
@@ -1416,7 +1431,7 @@ export default function (view) {
             Sources: [], AudioLanguage: '', RatingBlocks: [], TransitionWindowMinutes: 0, MinOfficialRating: '', MaxOfficialRating: '', IncludeUnrated: true, Category: 'None',
             KeepMultiPartTogether: true, EntryOverrides: [],
             IncludeEpisodes: true, IncludeMovies: true, IncludeSpecials: false, IncludeMusicVideos: true, IncludeHomeVideos: false, Shuffle: true, LoopMode: 'Shuffle', ShuffleEpisodes: false,
-            InterleaveOrder: 'Same', SubtitleBurnIn: 'Never', Enabled: true
+            InterleaveOrder: 'Same', FillerMode: 'Off', BumperSeconds: 15, SnapMinutes: 30, SubtitleBurnIn: 'Never', Enabled: true
         });
         currentIndex = channels.length - 1;
         renderSelect();
@@ -1469,6 +1484,7 @@ export default function (view) {
 
     function bind() {
         el('selectChannel').addEventListener('change', function () { currentIndex = parseInt(this.value, 10); loadEditor(); });
+        el('fillerMode').addEventListener('change', updateFillerControls);
         el('btnUploadLogo').addEventListener('click', function () { el('logoFile').click(); });
         el('logoFile').addEventListener('change', onLogoFile);
         el('btnClearLogo').addEventListener('click', clearLogo);

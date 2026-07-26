@@ -340,7 +340,92 @@ public partial class ChannelService
             LoopRotation(),
             channel.InterleaveOrder);
 
-        return ProgramLoopBuilder.Build(entries, options);
+        var loop = ProgramLoopBuilder.Build(entries, options);
+        return channel.FillerMode == FillerMode.Off ? loop : InjectFillerCards(channel, loop);
+    }
+
+    // Interleaves auto Up Next cards into a raw loop, one before every program, based on the channel's
+    // FillerMode. FixedBumper: every card is Channel.BumperSeconds long. SnapToBoundary: each card fills
+    // the pad needed to bring the previous program's slot up to the next Channel.SnapMinutes multiple, so
+    // programs start on tidy times. Cards are generated on demand by AutoCardService and cached to disk;
+    // a missing card (generation failure or slate size 0) is silently dropped and the next program plays
+    // directly.
+    private IReadOnlyList<ProgramEntry> InjectFillerCards(Channel channel, IReadOnlyList<ProgramEntry> loop)
+    {
+        if (loop.Count == 0)
+        {
+            return loop;
+        }
+
+        var result = new List<ProgramEntry>(loop.Count * 2);
+        long? previousDurationTicks = null;
+        for (var i = 0; i < loop.Count; i++)
+        {
+            var program = loop[i];
+            var cardTicks = CardTicksFor(channel, previousDurationTicks);
+            if (cardTicks > 0)
+            {
+                var cardPath = _autoCardService.EnsureCard(channel.Id, program, TimeSpan.FromTicks(cardTicks));
+                if (!string.IsNullOrEmpty(cardPath))
+                {
+                    result.Add(BuildCardEntry(program, cardTicks, cardPath));
+                }
+            }
+
+            result.Add(program);
+            previousDurationTicks = program.DurationTicks;
+        }
+
+        return result;
+    }
+
+    // The card duration in ticks for the slot BEFORE the next program. FixedBumper uses a channel-wide
+    // constant. SnapToBoundary derives the pad from the previous program's duration: enough time to bring
+    // the previous slot's end up to the next SnapMinutes boundary. The first program has no previous, so
+    // FixedBumper still gets its card and SnapToBoundary skips its card (no gap to fill).
+    private static long CardTicksFor(Channel channel, long? previousDurationTicks)
+    {
+        if (channel.FillerMode == FillerMode.FixedBumper)
+        {
+            var seconds = Math.Max(1, channel.BumperSeconds);
+            return seconds * TimeSpan.TicksPerSecond;
+        }
+
+        if (channel.FillerMode == FillerMode.SnapToBoundary && previousDurationTicks is long prev)
+        {
+            var snapMinutes = Math.Max(1, channel.SnapMinutes);
+            var snapTicks = snapMinutes * TimeSpan.TicksPerMinute;
+            var overflow = prev % snapTicks;
+            return overflow == 0 ? 0 : snapTicks - overflow;
+        }
+
+        return 0;
+    }
+
+    // Synthesises a card ProgramEntry: real file path so the streaming pipeline reads it like any other
+    // program, its own item id derived from the target program's id + duration so the schedule cache
+    // treats it as a stable entry across refreshes. Title is what appears in the guide.
+    private static ProgramEntry BuildCardEntry(ProgramEntry nextProgram, long ticks, string cardPath)
+    {
+        // Deterministic id: same next-program + same duration always yields the same card id, so a stable
+        // guide entry and stable stream position.
+        var idBytes = new byte[16];
+        var src = nextProgram.ItemId.ToByteArray();
+        Array.Copy(src, idBytes, 16);
+        idBytes[15] = (byte)(idBytes[15] ^ 0xC0);   // flip a bit so the card id never collides with the program id
+        var cardId = new Guid(idBytes);
+
+        var title = "Up Next: " + (nextProgram.SeriesName ?? nextProgram.Title ?? "next program");
+        return new ProgramEntry(cardId, title, null, ticks, cardPath)
+        {
+            IsMovie = false,
+            SeriesId = null,
+            SeriesName = null,
+            RawName = title,
+            TopLevelItemId = cardId,   // its own group so the loop builder never grouped it with anything
+            Weight = 1,
+            BlockSize = 1
+        };
     }
 
     // A rotation counter (days since the Unix epoch) that advances which single block each series contributes to a

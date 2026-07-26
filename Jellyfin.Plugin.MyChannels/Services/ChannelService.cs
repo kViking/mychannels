@@ -31,6 +31,7 @@ public partial class ChannelService
     private readonly ILocalizationManager _localization;
     private readonly IUserManager _userManager;
     private readonly IUserDataManager _userDataManager;
+    private readonly AutoCardService _autoCardService;
     private readonly ILogger<ChannelService> _logger;
 
     // Decoded schedules held in memory while a channel is being watched, keyed by channel number. Populated on
@@ -52,8 +53,9 @@ public partial class ChannelService
     /// <param name="userManager">The user manager, used to read server-wide watch data for the Popular channel.</param>
     /// <param name="userDataManager">The user-data manager, used to read per-item play counts for the Popular channel.</param>
     /// <param name="appPaths">The application paths, used to locate the stream root the schedule cache lives in.</param>
+    /// <param name="autoCardService">Renders Up Next card MP4s inserted between programs by non-Off FillerMode channels.</param>
     /// <param name="logger">The logger.</param>
-    public ChannelService(ILibraryManager libraryManager, IMediaSourceManager mediaSourceManager, ISubtitleEncoder subtitleEncoder, ILocalizationManager localization, IUserManager userManager, IUserDataManager userDataManager, IApplicationPaths appPaths, ILogger<ChannelService> logger)
+    public ChannelService(ILibraryManager libraryManager, IMediaSourceManager mediaSourceManager, ISubtitleEncoder subtitleEncoder, ILocalizationManager localization, IUserManager userManager, IUserDataManager userDataManager, IApplicationPaths appPaths, AutoCardService autoCardService, ILogger<ChannelService> logger)
     {
         _libraryManager = libraryManager;
         _mediaSourceManager = mediaSourceManager;
@@ -62,6 +64,7 @@ public partial class ChannelService
         _userManager = userManager;
         _userDataManager = userDataManager;
         _scheduleDir = ScheduleDir(appPaths);
+        _autoCardService = autoCardService;
         _logger = logger;
     }
 

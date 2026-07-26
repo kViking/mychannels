@@ -108,6 +108,15 @@ public class Channel
     /// <summary>Gets or sets how the shuffled loop orders its groups within each round-robin cycle: stable per channel every cycle, or shuffled per cycle so the interleave pattern varies as the loop progresses.</summary>
     public InterleaveOrder InterleaveOrder { get; set; } = InterleaveOrder.Same;
 
+    /// <summary>Gets or sets whether the channel inserts auto-generated Up Next cards between programs, and how. Off = programs air back-to-back. FixedBumper = insert a short card (see <see cref="BumperSeconds"/>) before every program. SnapToBoundary = pad each program's slot to the next boundary (see <see cref="SnapMinutes"/>) with a card, so programs start on tidy times like real broadcast TV.</summary>
+    public FillerMode FillerMode { get; set; } = FillerMode.Off;
+
+    /// <summary>Gets or sets the fixed card length in seconds when <see cref="FillerMode"/> is <see cref="Models.FillerMode.FixedBumper"/>. Default 15.</summary>
+    public int BumperSeconds { get; set; } = 15;
+
+    /// <summary>Gets or sets the grid interval in minutes when <see cref="FillerMode"/> is <see cref="Models.FillerMode.SnapToBoundary"/>. Typical values 15/30/60. Programs are padded to the next multiple.</summary>
+    public int SnapMinutes { get; set; } = 30;
+
     /// <summary>Gets or sets the content type the channel weights more heavily in its (shuffled) loop, or <see cref="Models.FavorKind.None"/>. Deprecated in v1.1.0.0 in favour of per-entry <see cref="EntryOverride.Weight"/>; scheduler ignores this field. A one-time startup migration in Plugin.cs synthesises equivalent EntryOverrides from any legacy non-None value.</summary>
     public FavorKind FavorKind { get; set; } = FavorKind.None;
 
