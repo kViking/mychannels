@@ -36,6 +36,14 @@ public class AutoCardService
     private readonly IApplicationPaths _paths;
     private readonly ILogger<AutoCardService> _logger;
 
+    // Tracks card outputs currently being generated in the background. Prevents duplicate ffmpeg invocations
+    // for the same target file when multiple tune-ins hit EnsureCard for the same (program, duration) at once.
+    // Keyed by the output path so ordering doesn't matter.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> InFlight = new();
+
+    // Cap simultaneous background ffmpeg processes so a channel edit doesn't spawn dozens at once.
+    private static readonly SemaphoreSlim BackgroundSlots = new(2, 2);
+
     /// <summary>Initializes a new instance of the <see cref="AutoCardService"/> class.</summary>
     /// <param name="encoder">Media encoder, used to locate ffmpeg.</param>
     /// <param name="paths">Application paths, used to place the cache directory.</param>
@@ -50,14 +58,15 @@ public class AutoCardService
     private string CardsRoot => Path.Combine(_paths.CachePath, "livechannels", "cards");
 
     /// <summary>
-    /// Returns the on-disk path of a card MP4 sized for the given duration, generating it once if it
-    /// isn't already cached. Returns <c>null</c> when generation fails (missing ffmpeg, backdrop I/O error,
-    /// etc.) — the caller should treat that as "no card, just play the next program directly."
+    /// Returns the on-disk path of a card MP4 sized for the given duration IF it's already cached. If it
+    /// isn't, kicks off a background generation task (fire-and-forget) and returns <c>null</c> so the
+    /// caller can play the next program directly on this tune-in; the card will be available on the next
+    /// resolve. Fast-path only — never blocks the tune-in critical path on ffmpeg.
     /// </summary>
     /// <param name="channelId">Channel id, used to scope the cache directory.</param>
     /// <param name="nextProgram">The program the card announces (its backdrop, title, series name).</param>
     /// <param name="duration">How long the card should play.</param>
-    /// <returns>The absolute path to the card MP4, or <c>null</c> on failure.</returns>
+    /// <returns>The absolute path to the card MP4 if cached, or <c>null</c> if not yet generated.</returns>
     public string? EnsureCard(string channelId, ProgramEntry nextProgram, TimeSpan duration)
     {
         if (nextProgram is null || duration <= TimeSpan.Zero)
@@ -76,16 +85,38 @@ public class AutoCardService
             return outPath;
         }
 
-        try
+        // Kick off background generation. Idempotent: if another thread is already generating this exact
+        // file we skip. A missing card just means the next program plays directly on this tune-in; the
+        // file will exist by the next resolve pass and the card will appear then.
+        if (InFlight.TryAdd(outPath, 0))
         {
-            Directory.CreateDirectory(chDir);
-            return Generate(nextProgram, duration, outPath) ? outPath : null;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    Directory.CreateDirectory(chDir);
+                    await BackgroundSlots.WaitAsync().ConfigureAwait(false);
+                    try
+                    {
+                        Generate(nextProgram, duration, outPath);
+                    }
+                    finally
+                    {
+                        BackgroundSlots.Release();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "MyChannels: background Up Next card generation failed for {Title}", nextProgram.Title);
+                }
+                finally
+                {
+                    InFlight.TryRemove(outPath, out _);
+                }
+            });
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "MyChannels: could not generate Up Next card for {Title}", nextProgram.Title);
-            return null;
-        }
+
+        return null;
     }
 
     private bool Generate(ProgramEntry program, TimeSpan duration, string outPath)

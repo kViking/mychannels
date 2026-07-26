@@ -1,7 +1,7 @@
 ---
 name: "MyChannels"
 guid: "65679cc2-98ed-419b-bc2c-b0110ffc0394"
-version: "1.2.0.0"
+version: "1.2.0.1"
 targetAbi: "10.11.9.0"
 framework: "net9.0"
 overview: "Fork of JPKribs Live Channels with an expanded scheduling model and filler support."
@@ -17,4 +17,4 @@ artifacts:
 - "Jellyfin.Plugin.MyChannels.dll"
 changelog:
   developer:
-  - Filler subsystem. New per-channel Auto Up Next card setting: Off (default, unchanged), FixedBumper (short card before every program, length configurable), or SnapToBoundary (variable-length card that pads program-end to the next 15/30/60-minute grid so programs start on tidy times like broadcast TV). Cards show the next program's landscape backdrop with a dark panel on the right and an "Up Next" title overlay, with a subtle Ken Burns zoom to fight burn-in during long slates. Cards are cached to /cache/livechannels/cards/... and generated once per (program, duration).
+  - Hotfix for v1.2.0.0: card generation moves fully off the tune-in critical path. A tune-in used to try to generate every missing card synchronously before the stream could start, blowing past ffmpeg timeouts and killing the whole session. Cards now generate in the background with a small concurrency cap; missing cards on a first tune-in are simply skipped, and they appear on the next resolve pass. Subsequent tune-ins with cached cards behave exactly as designed.
