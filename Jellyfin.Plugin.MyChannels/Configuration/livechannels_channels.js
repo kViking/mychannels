@@ -87,32 +87,40 @@ export default function (view) {
         if (!file) return;
         var ch = channels[currentIndex];
         if (!ch || !ch.Id) { e.target.value = ''; return; }
-        // Streams the raw bytes to the endpoint. Fetch keeps the browser from base64-encoding the file
-        // through the FileReader path we use for the (tiny) channel logo.
+        // ApiClient.ajax serialises the body assuming JSON, which mangles a File object. Use fetch
+        // directly with an XHR to keep the raw bytes as the body and inject the Jellyfin auth token.
         var url = ApiClient.getUrl('livechannels/channels/' + encodeURIComponent(ch.Id) + '/bumper');
         el('bumperStatus').textContent = 'Uploading...';
-        ApiClient.ajax({
-            type: 'POST',
-            url: url,
-            data: file,
-            contentType: 'video/mp4',
-            processData: false
-        }).then(function (raw) {
-            var r = typeof raw === 'string' ? JSON.parse(raw) : raw;
-            // Sync the in-memory channel so a subsequent Save doesn't ship stale HasCustomBumper=false
-            // over the server's now-updated state and undo the upload.
-            ch.HasCustomBumper = true;
-            ch.CustomBumperDurationTicks = Math.round((r.durationSeconds || 0) * 10000000);
-            renderBumperStatus(true, r.durationSeconds || 0);
-            Shared.setStatus('channelStatus', 'Bumper uploaded.', false);
-        }).catch(function (xhr) {
-            var msg = 'Upload failed.';
-            if (xhr && xhr.responseText) { msg = 'Upload failed: ' + xhr.responseText; }
-            Shared.setStatus('channelStatus', msg, true);
-            refreshBumperStatus();
-        }).finally(function () {
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', url, true);
+        xhr.setRequestHeader('Content-Type', 'video/mp4');
+        var token = (typeof ApiClient.accessToken === 'function') ? ApiClient.accessToken() : null;
+        if (token) { xhr.setRequestHeader('X-Emby-Token', token); }
+        xhr.onload = function () {
             e.target.value = '';
-        });
+            if (xhr.status >= 200 && xhr.status < 300) {
+                var r = {};
+                try { r = JSON.parse(xhr.responseText || '{}'); } catch (_) {}
+                // Sync the in-memory channel so a subsequent Save doesn't ship stale HasCustomBumper=false
+                // over the server's now-updated state and undo the upload.
+                ch.HasCustomBumper = true;
+                ch.CustomBumperDurationTicks = Math.round((r.durationSeconds || 0) * 10000000);
+                renderBumperStatus(true, r.durationSeconds || 0);
+                Shared.setStatus('channelStatus', 'Bumper uploaded.', false);
+            } else {
+                var msg = 'Upload failed (' + xhr.status + ')';
+                if (xhr.responseText) { msg += ': ' + xhr.responseText; }
+                Shared.setStatus('channelStatus', msg, true);
+                refreshBumperStatus();
+            }
+        };
+        xhr.onerror = function () {
+            e.target.value = '';
+            Shared.setStatus('channelStatus', 'Upload failed: network error.', true);
+            refreshBumperStatus();
+        };
+        xhr.send(file);
     }
 
     function removeBumper() {
