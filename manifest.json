@@ -9,6 +9,14 @@
     "category": "LiveTV",
     "versions": [
       {
+        "version": "1.2.1.1",
+        "changelog": "Fix race in Plugin.UpdateConfiguration: schedule cache was being cleared BEFORE the new config was persisted, so a concurrent tune-in or guide refresh firing in that window would rebuild the cache using the OLD in-memory config and immediately repopulate it. Symptom: turning FillerMode off on a channel had no effect until the next full RefreshGuide, because tune-ins kept serving the pre-save cache. Persist first, then clear.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/kViking/mychannels/releases/download/v1.2.1.1/mychannels-1.2.1.1.zip",
+        "checksum": "60cff10acef9c73321cbd7a0f2a183d3",
+        "timestamp": "2026-07-27T14:30:54Z"
+      },
+      {
         "version": "1.2.1.0",
         "changelog": "SnapToBoundary cards use a truncation model: one card file per program at the max pad length (SnapMinutes), trimmed at stream time to the actual pad needed. Card set stays bounded (one per program) regardless of loop reshuffles or rotation shifts — no combinatorial explosion. Channels with FillerMode=SnapToBoundary automatically use the per-item stream pipeline (concat mode can't truncate).",
         "targetAbi": "10.11.9.0",
