@@ -344,18 +344,24 @@ public partial class ChannelService
         return channel.FillerMode == FillerMode.Off ? loop : InjectFillerCards(channel, loop);
     }
 
-    // Interleaves auto Up Next cards into a raw loop, one before every program, based on the channel's
+    // Interleaves filler cards into a raw loop, one before every program, based on the channel's
     // FillerMode. For SnapToBoundary the CARD FILE is always generated at the max possible pad length
     // (SnapMinutes) and truncated at stream time to fit the actual pad — that way one card per program
     // covers every possible pad duration, so the card set stays bounded across loop reshuffles and
     // rotation shifts. FixedBumper cards are always the same fixed length, so file-duration and
-    // scheduled-duration agree naturally. Cards are inserted only when the cache file exists; the first
-    // few misses are preheated (nice priority, one ffmpeg at a time).
+    // scheduled-duration agree naturally. CustomBumper plays the user-uploaded video file at its own
+    // duration, bypassing auto-card generation entirely. Cards are inserted only when the underlying
+    // file exists; auto-generated misses preheat the first few (nice priority, one ffmpeg at a time).
     private IReadOnlyList<ProgramEntry> InjectFillerCards(Channel channel, IReadOnlyList<ProgramEntry> loop)
     {
         if (loop.Count == 0)
         {
             return loop;
+        }
+
+        if (channel.FillerMode == FillerMode.CustomBumper)
+        {
+            return InjectCustomBumper(channel, loop);
         }
 
         const int PreheatBudget = 3;
@@ -388,6 +394,64 @@ public partial class ChannelService
         }
 
         return result;
+    }
+
+    // The uploaded bumper is inserted before every program at its own probed duration. When the flag is
+    // set but the file is missing (deleted out from under us, or a partial migration), the channel simply
+    // airs its programs back-to-back for this refresh — same behaviour as FillerMode=Off — with a warning
+    // in the log so the user can spot it in the dashboard.
+    private IReadOnlyList<ProgramEntry> InjectCustomBumper(Channel channel, IReadOnlyList<ProgramEntry> loop)
+    {
+        if (!channel.HasCustomBumper)
+        {
+            _logger.LogWarning("MyChannels: channel '{Name}' is set to CustomBumper but has no uploaded bumper; airing programs back-to-back for this refresh.", channel.Name);
+            return loop;
+        }
+
+        var bumperPath = _bumpers.PathFor(channel.Id);
+        if (!_bumpers.Exists(channel.Id) || channel.CustomBumperDurationTicks <= 0)
+        {
+            _logger.LogWarning("MyChannels: channel '{Name}' has HasCustomBumper=true but the file at {Path} is missing or has no probed duration; airing programs back-to-back.", channel.Name, bumperPath);
+            return loop;
+        }
+
+        var bumperTicks = channel.CustomBumperDurationTicks;
+        var result = new List<ProgramEntry>(loop.Count * 2);
+        for (var i = 0; i < loop.Count; i++)
+        {
+            var program = loop[i];
+            result.Add(BuildCustomBumperEntry(channel, program, bumperTicks, bumperPath, i));
+            result.Add(program);
+        }
+
+        return result;
+    }
+
+    // Synthesises a bumper ProgramEntry pointing at the on-disk file. Deterministic id: same channel + same
+    // index yields the same id across resolves so the schedule cache treats each slot as a stable entry.
+    private static ProgramEntry BuildCustomBumperEntry(Channel channel, ProgramEntry nextProgram, long ticks, string bumperPath, int slotIndex)
+    {
+        var idBytes = new byte[16];
+        var src = nextProgram.ItemId.ToByteArray();
+        Array.Copy(src, idBytes, 16);
+        // Flip a bit AND scramble in the slot index so bumper ids never collide with the program id and
+        // stay unique across the loop even when the same next-program appears twice.
+        idBytes[15] = (byte)(idBytes[15] ^ 0xB0);
+        idBytes[14] = (byte)(idBytes[14] ^ (byte)(slotIndex & 0xFF));
+        var bumperId = new Guid(idBytes);
+
+        var title = string.IsNullOrEmpty(channel.Name) ? "Bumper" : channel.Name + " bumper";
+        return new ProgramEntry(bumperId, title, null, ticks, bumperPath)
+        {
+            IsMovie = false,
+            SeriesId = null,
+            SeriesName = null,
+            RawName = title,
+            TopLevelItemId = bumperId,
+            Weight = 1,
+            BlockSize = 1,
+            TruncateToDuration = false
+        };
     }
 
     // The card duration in ticks for the slot BEFORE the next program. FixedBumper uses a channel-wide

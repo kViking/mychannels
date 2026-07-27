@@ -38,11 +38,95 @@ export default function (view) {
     function el(id) { return view.querySelector('#' + id); }
 
     // Shows the per-mode input group for the current filler selection (bumper length for FixedBumper,
-    // grid interval for SnapToBoundary). Off hides both.
+    // grid interval for SnapToBoundary, upload widget for CustomBumper). Off hides all three.
     function updateFillerControls() {
         var mode = el('fillerMode').value;
         el('bumperSecondsGroup').classList.toggle('hidden', mode !== 'FixedBumper');
         el('snapMinutesGroup').classList.toggle('hidden', mode !== 'SnapToBoundary');
+        el('customBumperGroup').classList.toggle('hidden', mode !== 'CustomBumper');
+        if (mode === 'CustomBumper') {
+            refreshBumperStatus();
+        }
+    }
+
+    // Fetches the current bumper status from the server and updates the upload group's status text +
+    // remove-button visibility. No-op when no channel is loaded.
+    function refreshBumperStatus() {
+        var ch = channels[currentIndex];
+        if (!ch || !ch.Id) {
+            renderBumperStatus(false, 0);
+            return;
+        }
+        ApiClient.getJSON(ApiClient.getUrl('livechannels/channels/' + encodeURIComponent(ch.Id) + '/bumper'))
+            .then(function (r) {
+                renderBumperStatus(!!r.hasFile, r.durationSeconds || 0);
+            })
+            .catch(function () {
+                renderBumperStatus(false, 0);
+            });
+    }
+
+    function renderBumperStatus(hasFile, durationSeconds) {
+        var status = el('bumperStatus');
+        var remove = el('btnRemoveBumper');
+        if (!status) return;
+        if (hasFile) {
+            var mm = Math.floor(durationSeconds / 60);
+            var ss = Math.round(durationSeconds - mm * 60);
+            var duration = mm > 0 ? (mm + 'm ' + ss + 's') : (durationSeconds.toFixed(2) + 's');
+            status.textContent = 'Bumper uploaded, ' + duration + '.';
+            remove && remove.classList.remove('hidden');
+        } else {
+            status.textContent = 'No bumper uploaded.';
+            remove && remove.classList.add('hidden');
+        }
+    }
+
+    function onBumperFile(e) {
+        var file = e.target.files && e.target.files[0];
+        if (!file) return;
+        var ch = channels[currentIndex];
+        if (!ch || !ch.Id) { e.target.value = ''; return; }
+        // Streams the raw bytes to the endpoint. Fetch keeps the browser from base64-encoding the file
+        // through the FileReader path we use for the (tiny) channel logo.
+        var url = ApiClient.getUrl('livechannels/channels/' + encodeURIComponent(ch.Id) + '/bumper');
+        el('bumperStatus').textContent = 'Uploading...';
+        ApiClient.ajax({
+            type: 'POST',
+            url: url,
+            data: file,
+            contentType: 'video/mp4',
+            processData: false
+        }).then(function (raw) {
+            var r = typeof raw === 'string' ? JSON.parse(raw) : raw;
+            // Sync the in-memory channel so a subsequent Save doesn't ship stale HasCustomBumper=false
+            // over the server's now-updated state and undo the upload.
+            ch.HasCustomBumper = true;
+            ch.CustomBumperDurationTicks = Math.round((r.durationSeconds || 0) * 10000000);
+            renderBumperStatus(true, r.durationSeconds || 0);
+            Shared.setStatus('channelStatus', 'Bumper uploaded.', false);
+        }).catch(function (xhr) {
+            var msg = 'Upload failed.';
+            if (xhr && xhr.responseText) { msg = 'Upload failed: ' + xhr.responseText; }
+            Shared.setStatus('channelStatus', msg, true);
+            refreshBumperStatus();
+        }).finally(function () {
+            e.target.value = '';
+        });
+    }
+
+    function removeBumper() {
+        var ch = channels[currentIndex];
+        if (!ch || !ch.Id) return;
+        var url = ApiClient.getUrl('livechannels/channels/' + encodeURIComponent(ch.Id) + '/bumper');
+        ApiClient.ajax({ type: 'DELETE', url: url }).then(function () {
+            ch.HasCustomBumper = false;
+            ch.CustomBumperDurationTicks = 0;
+            renderBumperStatus(false, 0);
+            Shared.setStatus('channelStatus', 'Bumper removed.', false);
+        }).catch(function () {
+            Shared.setStatus('channelStatus', 'Could not remove bumper.', true);
+        });
     }
 
     // Parses the Years field into a sorted, de-duplicated list of production years. Accepts individual years and
@@ -1431,7 +1515,7 @@ export default function (view) {
             Sources: [], AudioLanguage: '', RatingBlocks: [], TransitionWindowMinutes: 0, MinOfficialRating: '', MaxOfficialRating: '', IncludeUnrated: true, Category: 'None',
             KeepMultiPartTogether: true, EntryOverrides: [],
             IncludeEpisodes: true, IncludeMovies: true, IncludeSpecials: false, IncludeMusicVideos: true, IncludeHomeVideos: false, Shuffle: true, LoopMode: 'Shuffle', ShuffleEpisodes: false,
-            InterleaveOrder: 'Same', FillerMode: 'Off', BumperSeconds: 15, SnapMinutes: 30, SubtitleBurnIn: 'Never', Enabled: true
+            InterleaveOrder: 'Same', FillerMode: 'Off', BumperSeconds: 15, SnapMinutes: 30, HasCustomBumper: false, CustomBumperDurationTicks: 0, SubtitleBurnIn: 'Never', Enabled: true
         });
         currentIndex = channels.length - 1;
         renderSelect();
@@ -1488,6 +1572,9 @@ export default function (view) {
         el('btnUploadLogo').addEventListener('click', function () { el('logoFile').click(); });
         el('logoFile').addEventListener('change', onLogoFile);
         el('btnClearLogo').addEventListener('click', clearLogo);
+        el('btnUploadBumper').addEventListener('click', function () { el('bumperFile').click(); });
+        el('bumperFile').addEventListener('change', onBumperFile);
+        el('btnRemoveBumper').addEventListener('click', removeBumper);
         // Keep the placeholder in step with the name (colour) and number (label) while there's no upload.
         el('channelNumber').addEventListener('input', function () { if (!logoData) renderLogoPreview(); });
         el('channelName').addEventListener('input', function () { if (!logoData) renderLogoPreview(); });

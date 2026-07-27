@@ -107,7 +107,11 @@ public class StreamSessionService
         // to fit the actual pad), and concat mode's ffmpeg demuxer plays whole files without honouring per-item
         // -t limits. So force per-item mode whenever the channel might truncate a program.
         var needsTruncation = programs.Any(p => p.TruncateToDuration);
-        var alreadyPerItem = channel.SubtitleBurnIn != Models.SubtitleBurnInMode.Never || highRes || usesHwUpload || needsTruncation;
+        // A user-uploaded custom bumper has arbitrary resolution/framerate/pixel-format/audio properties. The
+        // concat demuxer requires uniform properties across all inputs, so a mismatched bumper would break the
+        // whole stream. Auto-generated cards are safe (AutoCardService normalises them); uploaded ones aren't.
+        var hasCustomBumper = channel.FillerMode == Models.FillerMode.CustomBumper && channel.HasCustomBumper;
+        var alreadyPerItem = channel.SubtitleBurnIn != Models.SubtitleBurnInMode.Never || highRes || usesHwUpload || needsTruncation || hasCustomBumper;
         var hasHdr = !alreadyPerItem && programs.Any(p => p.IsHdr);
         var perItem = alreadyPerItem || hasHdr || timeOfDay;
         var uniform = programs.Count > 0 && programs[0].SourceHeight > 0 && programs.All(p => p.SourceHeight == programs[0].SourceHeight);

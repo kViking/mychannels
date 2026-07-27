@@ -300,8 +300,9 @@
                                         <option value="Off">Off — programs air back-to-back</option>
                                         <option value="FixedBumper">Fixed bumper before every program</option>
                                         <option value="SnapToBoundary">Snap program starts to a grid</option>
+                                        <option value="CustomBumper">Custom bumper (upload video)</option>
                                     </select>
-                                    <div class="fieldDescription">Inserts an auto-generated card between programs, showing the next program's backdrop with an "Up Next" title overlay. Cards are cached and rendered once per program.</div>
+                                    <div class="fieldDescription">Inserts a card between programs. FixedBumper and SnapToBoundary auto-generate a card from the next program's backdrop; CustomBumper plays an MP4 you upload for this channel.</div>
                                 </div>
                                 <div id="bumperSecondsGroup" class="jpk-indent hidden">
                                     <div class="inputContainer">
@@ -318,6 +319,24 @@
                                             <option value="60">60 minutes</option>
                                         </select>
                                         <div class="fieldDescription">Programs are padded with an Up Next card to land on the next multiple of this interval. A 44-minute show followed by 16 minutes of card gives you a 60-minute slot starting on the hour.</div>
+                                    </div>
+                                </div>
+                                <div id="customBumperGroup" class="jpk-indent hidden">
+                                    <div class="inputContainer">
+                                        <label>Custom bumper</label>
+                                        <div class="jpk-selector">
+                                            <div class="jpk-selector-actions">
+                                                <button is="emby-button" type="button" id="btnUploadBumper" class="raised jpk-icon-btn" title="Upload MP4">
+                                                    <span class="material-icons" aria-hidden="true">upload</span><span>Upload</span>
+                                                </button>
+                                                <button is="emby-button" type="button" id="btnRemoveBumper" class="raised jpk-icon-btn jpk-button-destructive hidden" title="Remove bumper">
+                                                    <span class="material-icons" aria-hidden="true">delete</span><span>Remove</span>
+                                                </button>
+                                            </div>
+                                            <input type="file" id="bumperFile" accept="video/mp4" class="hidden" />
+                                        </div>
+                                        <div id="bumperStatus" class="fieldDescription">No bumper uploaded.</div>
+                                        <div class="fieldDescription">MP4 (H.264 + AAC) only. The bumper plays before every program at its own duration; match it to your grid interval if you're pairing with fixed-length programming. Files live in the plugin cache, not the config.</div>
                                     </div>
                                 </div>
                             </div>

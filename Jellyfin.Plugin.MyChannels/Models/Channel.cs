@@ -117,6 +117,12 @@ public class Channel
     /// <summary>Gets or sets the grid interval in minutes when <see cref="FillerMode"/> is <see cref="Models.FillerMode.SnapToBoundary"/>. Typical values 15/30/60. Programs are padded to the next multiple.</summary>
     public int SnapMinutes { get; set; } = 30;
 
+    /// <summary>Gets or sets a value indicating whether the channel has an uploaded custom bumper video, used when <see cref="FillerMode"/> is <see cref="Models.FillerMode.CustomBumper"/>. The file itself lives at a derived path in the plugin cache directory (never in this config XML); this flag just records whether one has been uploaded.</summary>
+    public bool HasCustomBumper { get; set; }
+
+    /// <summary>Gets or sets the uploaded custom bumper's duration in ticks, probed once at upload time (via ffprobe) so the scheduler can slot it without re-probing on every resolve.</summary>
+    public long CustomBumperDurationTicks { get; set; }
+
     /// <summary>Gets or sets the content type the channel weights more heavily in its (shuffled) loop, or <see cref="Models.FavorKind.None"/>. Deprecated in v1.1.0.0 in favour of per-entry <see cref="EntryOverride.Weight"/>; scheduler ignores this field. A one-time startup migration in Plugin.cs synthesises equivalent EntryOverrides from any legacy non-None value.</summary>
     public FavorKind FavorKind { get; set; } = FavorKind.None;
 

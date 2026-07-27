@@ -23,6 +23,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<StressTestService>();
         serviceCollection.AddSingleton<DefaultLogoService>();
         serviceCollection.AddSingleton<AutoCardService>();
+        serviceCollection.AddSingleton<BumperService>();
         serviceCollection.AddSingleton<ActivityLogger>();
         serviceCollection.AddSingleton<TimerService>();
         serviceCollection.AddSingleton<RecordingService>();

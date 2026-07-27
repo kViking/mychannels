@@ -12,5 +12,8 @@ public enum FillerMode
     FixedBumper = 1,
 
     /// <summary>Pad each program's slot to a grid boundary (see <see cref="Channel.SnapMinutes"/>) with a card. Programs start on tidy times like real broadcast TV.</summary>
-    SnapToBoundary = 2
+    SnapToBoundary = 2,
+
+    /// <summary>Play a user-uploaded MP4 bumper before every program (see <see cref="Channel.HasCustomBumper"/>). The bumper's own duration is the slot; auto-card generation is bypassed entirely for this channel.</summary>
+    CustomBumper = 3
 }
