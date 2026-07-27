@@ -92,11 +92,12 @@ public class Plugin : PluginBase<Plugin, PluginConfiguration>
             config.ScheduleAnchorUtc = DateTime.UtcNow;
         }
 
-        // A channel edit must not be served from a stale schedule, so drop every cached schedule; the next guide
-        // refresh or tune-in rebuilds it from the new configuration.
-        ChannelService.ClearScheduleCache(_applicationPaths);
-
+        // Order matters: persist the new configuration FIRST, then clear the schedule cache. Otherwise a
+        // concurrent tune-in or guide refresh firing between the clear and the persist would rebuild the
+        // cache using the OLD in-memory config and write it back, so a user turning FillerMode off (say)
+        // could see their newly-cleared cache immediately repopulate with cards from the pre-save config.
         base.UpdateConfiguration(configuration);
+        ChannelService.ClearScheduleCache(_applicationPaths);
     }
 
     /// <inheritdoc />
