@@ -9,6 +9,14 @@
     "category": "LiveTV",
     "versions": [
       {
+        "version": "1.3.2.0",
+        "changelog": "Port the tuned Up Next card filter chain from testcards/gen-card.sh into AutoCardService. New cards: bumped from 24 to 60 fps, Ken Burns removed (was steppy on still images), 760x340 panel flush to bottom-right with a per-pixel radial gradient that fades to fully transparent at the top edge (attaches visually to the frame bottom instead of floating), text lags panel by 100ms on entry. Cards auto-fit N cycles based on their duration - a 30s card holds twice, a 2-minute card holds enough times to spread evenly, keeping burn-in and viewer attention in check without any card being on-screen for more than a few seconds at a stretch. Structural head/tail fades from/to black (500ms each) always happen.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/kViking/mychannels/releases/download/v1.3.2.0/mychannels-1.3.2.0.zip",
+        "checksum": "25afa503be5b9c2e9dc3035e61a5e21b",
+        "timestamp": "2026-07-28T18:15:00Z"
+      },
+      {
         "version": "1.3.1.0",
         "changelog": "New per-channel Randomize season start toggle. Off (default) keeps the existing behaviour where each daily guide refresh advances every series' starting block by +1, so the channel walks through each series deterministically. On, every RefreshGuide picks a fresh random starting block per series, so tune-ins don't always land on the same handful of episodes.",
         "targetAbi": "10.11.9.0",
