@@ -1107,7 +1107,14 @@ export default function (view) {
     var _topLevelById = {};
     var _entryOverridesHydrated = false;
 
+    // Monotonic id assigned to each hydrate call, so a slow response from a previously-open channel can't
+    // merge into the currently-open channel's row list. Without this, switching channels mid-flight caused
+    // the .then to append its rows to _topLevelById (which the newer hydrate had already reset for the
+    // current channel), producing a merged multi-channel list — the "chuckle programs interleaved" bug.
+    var _hydrateSeq = 0;
+
     function hydrateEntryOverrides(channel) {
+        var seq = ++_hydrateSeq;
         _entryOverridesHydrated = false;
         _topLevelById = {};
         var url = ApiClient.getUrl('livechannels/channels/resolve-top-level');
@@ -1118,10 +1125,14 @@ export default function (view) {
             contentType: 'application/json',
             dataType: 'json'
         }).then(function (rows) {
+            if (seq !== _hydrateSeq) return;   // stale response — a newer hydrate has taken over
+            _topLevelById = {};                 // full replace, not additive, so a late older response
+                                                 // can't leak into a newer one
             (rows || []).forEach(function (r) { _topLevelById[r.id] = r; });
             _entryOverridesHydrated = true;
             renderEntryOverrides(channel);
         }).catch(function () {
+            if (seq !== _hydrateSeq) return;
             _entryOverridesHydrated = true;
             renderEntryOverrides(channel);
         });
@@ -1303,7 +1314,14 @@ export default function (view) {
 
         // Populate the Content Weights section from the plugin's resolve-top-level endpoint. Async: renders
         // a loading placeholder immediately, then the real list when the fetch returns.
+        //
+        // Clear the hydrate state BEFORE the sync render so the placeholder actually shows. Otherwise the
+        // sync render would draw the PREVIOUS channel's items with the CURRENT channel's EntryOverrides
+        // applied on top — the wrong-channel-briefly-visible bug, plus it primed the DOM in a way that
+        // confused the eye when the real render arrived a second later.
         ch.EntryOverrides = ch.EntryOverrides || [];
+        _entryOverridesHydrated = false;
+        _topLevelById = {};
         renderEntryOverrides(ch);
         hydrateEntryOverrides(ch);
     }
