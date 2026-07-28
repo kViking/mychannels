@@ -1283,6 +1283,7 @@ export default function (view) {
         studioPicker.setValue((ch.Studios || []).map(function (s) { return { key: s, label: s }; }));
         peoplePicker.setValue((ch.People || []).map(function (p) { return { key: p.Id, label: p.Name }; }));
         el('keepMultiPart').checked = ch.KeepMultiPartTogether !== false;
+        el('randomizeSeasonStart').checked = !!ch.RandomizeSeasonStart;
         el('includeEpisodes').checked = ch.IncludeEpisodes !== false;
         el('includeMovies').checked = ch.IncludeMovies !== false;
         el('includeSpecials').checked = !!ch.IncludeSpecials;
@@ -1333,6 +1334,7 @@ export default function (view) {
         ch.Studios = studioPicker ? studioPicker.getValue().map(function (s) { return s.key; }) : (ch.Studios || []);
         ch.People = peoplePicker ? peoplePicker.getValue().map(function (p) { return { Id: p.key, Name: p.label }; }) : (ch.People || []);
         ch.KeepMultiPartTogether = el('keepMultiPart').checked;
+        ch.RandomizeSeasonStart = el('randomizeSeasonStart').checked;
         ch.IncludeEpisodes = el('includeEpisodes').checked;
         ch.IncludeMovies = el('includeMovies').checked;
         ch.IncludeSpecials = el('includeSpecials').checked;
@@ -1523,7 +1525,7 @@ export default function (view) {
             Sources: [], AudioLanguage: '', RatingBlocks: [], TransitionWindowMinutes: 0, MinOfficialRating: '', MaxOfficialRating: '', IncludeUnrated: true, Category: 'None',
             KeepMultiPartTogether: true, EntryOverrides: [],
             IncludeEpisodes: true, IncludeMovies: true, IncludeSpecials: false, IncludeMusicVideos: true, IncludeHomeVideos: false, Shuffle: true, LoopMode: 'Shuffle', ShuffleEpisodes: false,
-            InterleaveOrder: 'Same', FillerMode: 'Off', BumperSeconds: 15, SnapMinutes: 30, HasCustomBumper: false, CustomBumperDurationTicks: 0, SubtitleBurnIn: 'Never', Enabled: true
+            InterleaveOrder: 'Same', RandomizeSeasonStart: false, FillerMode: 'Off', BumperSeconds: 15, SnapMinutes: 30, HasCustomBumper: false, CustomBumperDurationTicks: 0, SubtitleBurnIn: 'Never', Enabled: true
         });
         currentIndex = channels.length - 1;
         renderSelect();

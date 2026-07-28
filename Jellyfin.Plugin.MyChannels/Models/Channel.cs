@@ -105,6 +105,9 @@ public class Channel
     /// <summary>Gets or sets a value indicating whether episodes within a series are shuffled rather than played in air order.</summary>
     public bool ShuffleEpisodes { get; set; }
 
+    /// <summary>Gets or sets a value indicating whether each series' starting block is randomised on every schedule build. Off (default): starts advance +1 block per day so the channel walks through each series deterministically. On: each RefreshGuide picks a fresh random start per series, so you don't always land on the same episodes.</summary>
+    public bool RandomizeSeasonStart { get; set; }
+
     /// <summary>Gets or sets how the shuffled loop orders its groups within each round-robin cycle: stable per channel every cycle, or shuffled per cycle so the interleave pattern varies as the loop progresses.</summary>
     public InterleaveOrder InterleaveOrder { get; set; } = InterleaveOrder.Same;
 

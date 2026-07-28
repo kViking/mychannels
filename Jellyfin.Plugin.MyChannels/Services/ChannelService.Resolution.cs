@@ -332,12 +332,17 @@ public partial class ChannelService
             }
         }
 
+        // Rotation seed = day counter by default (each daily refresh shifts every group's starting block
+        // by +1, so the channel walks through each series deterministically). When the channel opts in to
+        // RandomizeSeasonStart, replace that with a fresh random per build — every refresh picks a new
+        // starting block per group so viewers don't always catch the same episodes on tune-in.
+        var rotation = channel.RandomizeSeasonStart ? Random.Shared.Next(int.MinValue, int.MaxValue) : LoopRotation();
         var options = new ChannelLoopOptions(
             channel.KeepMultiPartTogether,
             channel.EffectiveLoopMode(),
             channel.ShuffleEpisodes,
             channel.Id,
-            LoopRotation(),
+            rotation,
             channel.InterleaveOrder);
 
         // Diagnostic: dump the override table and the resolved per-group weight/blockSize/count so a
