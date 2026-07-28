@@ -30,7 +30,39 @@ public class AutoCardService
 {
     private const int Width = 1920;
     private const int Height = 1080;
-    private const int Fps = 24;
+    private const int Fps = 60;
+
+    // Panel geometry. Bottom-right corner, flush to frame edges. Tuned via testcards/tune.html so the
+    // radial gradient fades from ~opaque at the panel's bottom-right through transparent at the top-left,
+    // reading legibly over a wide range of backdrops without a hard boundary.
+    private const int PanelWidth = 760;
+    private const int PanelHeight = 340;
+    private const int PanelX = Width - PanelWidth;
+    private const int PanelY = Height - PanelHeight;
+
+    // Radial gradient origin: offsets past the panel's bottom-right corner (so the origin sits down-and-right
+    // of the panel, giving the darkest values in the bottom-right and fading upward-left).
+    private const int GradientOriginXOffset = 421;
+    private const int GradientOriginYOffset = 167;
+    private const double GradientCurve = 0.4;
+    // Top fade zone caps the alpha to 0 exactly at the panel's top edge, so the panel visually attaches to
+    // the frame bottom without a hard top boundary regardless of backdrop.
+    private const int GradientTopFadeZone = 133;
+
+    // Text baseline: "Up Next" at 85px, main title at +55, subtitle at +130 (all measured from panel top).
+    private const int TextYFirst = 85;
+    private const int TextYMain = TextYFirst + 55;
+    private const int TextYSub = TextYFirst + 130;
+
+    // Timeline structural constants (seconds). Head/tail fades ALWAYS happen. Card cycles auto-fit the middle.
+    private const double HeadFade = 0.5;
+    private const double TailFade = 0.5;
+    private const double LeadGap = 1.0;
+    private const double TrailGap = 1.0;
+    private const double CardIn = 0.5;
+    private const double CardOut = 0.5;
+    private const double CycleGapMin = 2.0;
+    private const double MinHold = 2.5;
 
     private readonly IMediaEncoder _encoder;
     private readonly IApplicationPaths _paths;
@@ -181,7 +213,7 @@ public class AutoCardService
         args.Add("-i"); args.Add("anullsrc=r=48000:cl=stereo");
 
         args.Add("-filter_complex");
-        args.Add(BuildFilter(haveBackdrop, seconds, textFont, upNext, mainTitle, subTitle));
+        args.Add(BuildFilter(seconds, textFont, upNext, mainTitle, subTitle));
 
         args.Add("-map"); args.Add("[out]");
         args.Add("-map"); args.Add("1:a");
@@ -199,97 +231,179 @@ public class AutoCardService
         return Run(ffmpeg, args, program.Title ?? "(card)");
     }
 
-    // Builds the filter graph. Steps:
-    //   1. Scale + centre-crop the backdrop to 1920x1080
-    //   2. Ken Burns: slow zoom (1.00 to ~1.03 over the whole card) with a mild horizontal drift, so cards
-    //      lasting minutes never present a still image (burn-in prevention on plasma/OLED)
-    //   3. Dark gradient panel occupying the right ~45% of the frame (drawn as a semi-opaque box; a real
-    //      linear gradient is expensive in ffmpeg and the flat box reads fine against most artwork)
-    //   4. Text: "Up Next" label, then the main title, then optional subtitle (episode name for series)
-    private static string BuildFilter(bool haveBackdrop, double seconds, string? textFont, string upNext, string mainTitle, string subTitle)
+    // Builds the filter graph. Structure (ported from testcards/gen-card.sh, tuned interactively):
+    //
+    //   [fade in]   backdrop fades from black                 (500 ms, structural)
+    //   [lead]      backdrop only, breathing room             (1.0 s)
+    //   [cycle 1]   panel slides in from bottom, holds, slides out
+    //     [gap]     backdrop only                             (only if N > 1)
+    //   [cycle N]   ...
+    //   [trail]     backdrop only                             (1.0 s)
+    //   [fade out]  backdrop fades to black                   (500 ms, structural)
+    //
+    // The head/tail fades ALWAYS happen. Number of cycles auto-fits: longer cards get more cycles and slightly
+    // more hold-time per cycle, so a 2-minute card doesn't sit still for 90 seconds after a single reveal.
+    // Panel is a radial gradient at the bottom-right corner (760x340), origin down-and-right of the panel so
+    // the darkest values sit under the text and fade cleanly at the top edge without a hard boundary.
+    private static string BuildFilter(double seconds, string? textFont, string upNext, string mainTitle, string subTitle)
     {
-        var sb = new StringBuilder();
-        var frames = Math.Max(2, (int)Math.Round(seconds * Fps));
+        var inv = CultureInfo.InvariantCulture;
+        var (cycles, hold, cycleGap) = SolveTiming(seconds);
+        var (overlayY, textAlpha) = BuildAnimationExprs(cycles, hold, cycleGap);
+        var bgFadeOutStart = seconds - TailFade;
 
-        // Scale to fill 1920x1080 preserving aspect. zoompan sees a still frame per iteration and generates
-        // the pan/zoom animation frame by frame.
-        sb.Append("[0:v]scale=");
-        sb.Append(Width);
-        sb.Append(':');
-        sb.Append(Height);
-        sb.Append(":force_original_aspect_ratio=increase,crop=");
-        sb.Append(Width);
-        sb.Append(':');
-        sb.Append(Height);
+        // Radial gradient origin lives in PANEL coords, offset past the panel's bottom-right corner.
+        // MaxReach = distance to the panel's opposite (top-left) corner (0, 0), so the gradient covers the
+        // whole panel and dies at the far edge.
+        var originX = PanelWidth + GradientOriginXOffset;
+        var originY = PanelHeight + GradientOriginYOffset;
+        var maxReach = Math.Sqrt((double)originX * originX + (double)originY * originY);
 
-        if (haveBackdrop)
-        {
-            // Subtle Ken Burns. `zoompan` treats the input as a stream of frames, so d=1 emits one output
-            // frame per input frame with the current zoom/pan applied. `on` is output-frame count; we zoom
-            // from 1.00 to ~1.03 over the whole card, drifting horizontally by 3% at the same time.
-            sb.Append(",zoompan=z='1+0.03*on/");
-            sb.Append(frames.ToString(CultureInfo.InvariantCulture));
-            sb.Append("':x='iw*0.03*on/");
-            sb.Append(frames.ToString(CultureInfo.InvariantCulture));
-            sb.Append("':y='ih*0.01':d=1:s=");
-            sb.Append(Width);
-            sb.Append('x');
-            sb.Append(Height);
-            sb.Append(":fps=");
-            sb.Append(Fps.ToString(CultureInfo.InvariantCulture));
-        }
+        var sb = new StringBuilder(2048);
 
-        // Dark panel on the right for text legibility.
-        var panelX = (Width * 55 / 100).ToString(CultureInfo.InvariantCulture);
-        var panelW = (Width * 45 / 100).ToString(CultureInfo.InvariantCulture);
-        sb.Append(",drawbox=x=");
-        sb.Append(panelX);
-        sb.Append(":y=0:w=");
-        sb.Append(panelW);
-        sb.Append(":h=");
-        sb.Append(Height);
-        sb.Append(":color=black@0.65:t=fill");
+        // ---- Background: scale + centre-crop to 1920x1080, fade in from black, fade out to black -----------
+        sb.Append("[0:v]scale=").Append(Width).Append(':').Append(Height);
+        sb.Append(":force_original_aspect_ratio=increase,crop=").Append(Width).Append(':').Append(Height);
+        sb.Append(",fade=t=in:st=0:d=").Append(HeadFade.ToString("F3", inv));
+        sb.Append(",fade=t=out:st=").Append(bgFadeOutStart.ToString("F3", inv))
+            .Append(":d=").Append(TailFade.ToString("F3", inv));
+        sb.Append("[bg];");
+
+        // ---- Panel: transparent RGBA base, radial gradient painted via geq alpha ------------------------
+        // The geq expression MUST escape commas as "\," inside a quoted arg because the outer filter graph
+        // parser eats unescaped commas. `clip(255 * pow(max(0, 1 - dist/reach), curve) * clip(Y/topFade, 0, 1), 0, 255)`:
+        // radial fall-off shaped by an exponent, capped near the top edge so the panel visually attaches to
+        // the bottom of the frame with no hard line.
+        sb.Append("color=c=black@0:s=").Append(PanelWidth).Append('x').Append(PanelHeight);
+        sb.Append(":r=").Append(Fps).Append(":d=").Append(seconds.ToString("F3", inv));
+        sb.Append(",format=rgba");
+        sb.Append(",geq=r=0:g=0:b=0:a='clip(255 * pow(max(0\\, 1 - hypot(");
+        sb.Append(originX).Append("-X\\, ").Append(originY).Append("-Y)/").Append(maxReach.ToString("F3", inv));
+        sb.Append(")\\, ").Append(GradientCurve.ToString("F3", inv));
+        sb.Append(") * clip(Y/").Append(GradientTopFadeZone).Append("\\, 0\\, 1), 0, 255)'");
 
         if (textFont is not null)
         {
             var font = textFont.Replace("\\", "/", StringComparison.Ordinal);
-            var textX = (Width * 58 / 100).ToString(CultureInfo.InvariantCulture);
 
-            // "Up Next" label
-            sb.Append(",drawtext=fontfile='");
-            sb.Append(font);
-            sb.Append("':text='");
-            sb.Append(SanitizeForDrawtext(upNext));
-            sb.Append("':fontcolor=white@0.75:fontsize=36:x=");
-            sb.Append(textX);
-            sb.Append(":y=");
-            sb.Append((Height * 38 / 100).ToString(CultureInfo.InvariantCulture));
+            // "Up Next" label — 32 pt, alpha follows the shared TEXT_ALPHA (fades with the panel + card cycle).
+            sb.Append(",drawtext=fontfile='").Append(font).Append("':text='").Append(SanitizeForDrawtext(upNext));
+            sb.Append("':fontcolor=white:fontsize=32:x=40:y=").Append(TextYFirst);
+            sb.Append(":alpha='").Append(textAlpha).Append('\'');
 
-            // Main title
-            sb.Append(",drawtext=fontfile='");
-            sb.Append(font);
-            sb.Append("':text='");
-            sb.Append(SanitizeForDrawtext(mainTitle));
-            sb.Append("':fontcolor=white:fontsize=64:x=");
-            sb.Append(textX);
-            sb.Append(":y=");
-            sb.Append((Height * 44 / 100).ToString(CultureInfo.InvariantCulture));
+            // Main title — 56 pt.
+            sb.Append(",drawtext=fontfile='").Append(font).Append("':text='").Append(SanitizeForDrawtext(mainTitle));
+            sb.Append("':fontcolor=white:fontsize=56:x=40:y=").Append(TextYMain);
+            sb.Append(":alpha='").Append(textAlpha).Append('\'');
 
             if (!string.IsNullOrEmpty(subTitle))
             {
-                sb.Append(",drawtext=fontfile='");
-                sb.Append(font);
-                sb.Append("':text='");
-                sb.Append(SanitizeForDrawtext(subTitle));
-                sb.Append("':fontcolor=white@0.9:fontsize=40:x=");
-                sb.Append(textX);
-                sb.Append(":y=");
-                sb.Append((Height * 55 / 100).ToString(CultureInfo.InvariantCulture));
+                // Subtitle (episode name for series) — 36 pt.
+                sb.Append(",drawtext=fontfile='").Append(font).Append("':text='").Append(SanitizeForDrawtext(subTitle));
+                sb.Append("':fontcolor=white:fontsize=36:x=40:y=").Append(TextYSub);
+                sb.Append(":alpha='").Append(textAlpha).Append('\'');
             }
         }
 
-        sb.Append("[out]");
+        sb.Append("[panel];");
+
+        // ---- Overlay panel onto background at animated Y (slides in from bottom, holds, slides out) --------
+        sb.Append("[bg][panel]overlay=x=").Append(PanelX).Append(":y='").Append(overlayY).Append("'[out]");
+
         return sb.ToString();
+    }
+
+    // Auto-fits the largest N cycles that satisfy MinHold, then distributes remaining slack proportionally
+    // to hold slots and gap slots. Total receivers = 2n-1 (n holds + n-1 gaps). Mirrors the Python solver in
+    // testcards/gen-card.sh so what you see in the shell tuning tool is what the plugin will render.
+    private static (int Cycles, double Hold, double Gap) SolveTiming(double seconds)
+    {
+        var middle = seconds - HeadFade - LeadGap - TrailGap - TailFade;
+        var perCycleFixed = CardIn + CardOut;
+
+        (double Hold, double Gap)? Fit(int n)
+        {
+            var baseline = n * (perCycleFixed + MinHold) + (n - 1) * CycleGapMin;
+            var slack = middle - baseline;
+            if (slack < 0)
+            {
+                return null;
+            }
+
+            var receivers = 2 * n - 1;
+            var per = receivers > 0 ? slack / receivers : 0;
+            var hold = MinHold + per;
+            var gap = n > 1 ? CycleGapMin + per : 0;
+            return (hold, gap);
+        }
+
+        var first = Fit(1);
+        if (first is null)
+        {
+            // Won't fit even one cycle at MinHold — degrade by shortening the hold below floor rather than
+            // dropping the card entirely.
+            var hold = Math.Max(0.1, middle - perCycleFixed);
+            return (1, hold, 0);
+        }
+
+        var (bestHold, bestGap) = first.Value;
+        var bestN = 1;
+        while (true)
+        {
+            var next = Fit(bestN + 1);
+            if (next is null)
+            {
+                break;
+            }
+
+            bestN++;
+            bestHold = next.Value.Hold;
+            bestGap = next.Value.Gap;
+        }
+
+        return (bestN, bestHold, bestGap);
+    }
+
+    // Builds the ffmpeg overlay-y and text-alpha expressions as chained nested if() branches, one branch
+    // triple per cycle: card slides in (Y ramps from H to PanelY over CardIn), holds (Y=PanelY), slides out
+    // (Y ramps back to H over CardOut). Text alpha lags the panel by 100 ms on entry so the panel arrives
+    // first. Outside all cycle windows the expressions fall through to the "hidden" defaults (Y=H, alpha=0).
+    // The nested-if structure resolves shared time boundaries to the later-priority branch, which matches the
+    // intended timeline (out > hold > in > default).
+    private static (string OverlayY, string TextAlpha) BuildAnimationExprs(int cycles, double hold, double gap)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        string overlayY = Height.ToString(inv);
+        string textAlpha = "0";
+
+        for (var c = 0; c < cycles; c++)
+        {
+            var cycleStart = HeadFade + LeadGap + c * (CardIn + hold + CardOut + gap);
+            var holdStart = cycleStart + CardIn;
+            var outStart = holdStart + hold;
+            var outEnd = outStart + CardOut;
+            var textInStart = cycleStart + 0.1;
+
+            // OVERLAY_Y: slide-in ramp -> hold -> slide-out ramp.
+            overlayY = "if(between(t," + F(cycleStart) + "," + F(holdStart) + "),"
+                + Height + "-(" + Height + "-" + PanelY + ")*(t-" + F(cycleStart) + ")/" + F(CardIn)
+                + "," + overlayY + ")";
+            overlayY = "if(between(t," + F(holdStart) + "," + F(outStart) + ")," + PanelY + "," + overlayY + ")";
+            overlayY = "if(between(t," + F(outStart) + "," + F(outEnd) + "),"
+                + PanelY + "+(" + Height + "-" + PanelY + ")*(t-" + F(outStart) + ")/" + F(CardOut)
+                + "," + overlayY + ")";
+
+            // TEXT_ALPHA: ramps 0->1 across (textInStart..holdStart), holds 1, ramps 1->0 across (outStart..outEnd).
+            textAlpha = "if(between(t," + F(textInStart) + "," + F(holdStart) + "),(t-" + F(textInStart)
+                + ")/(" + F(holdStart) + "-" + F(textInStart) + ")," + textAlpha + ")";
+            textAlpha = "if(between(t," + F(holdStart) + "," + F(outStart) + "),1," + textAlpha + ")";
+            textAlpha = "if(between(t," + F(outStart) + "," + F(outEnd) + "),1-(t-" + F(outStart)
+                + ")/" + F(CardOut) + "," + textAlpha + ")";
+        }
+
+        return (overlayY, textAlpha);
+
+        static string F(double v) => v.ToString("F3", CultureInfo.InvariantCulture);
     }
 
     // Picks the "Up Next" label, main title, and optional subtitle from a program entry. For a series
