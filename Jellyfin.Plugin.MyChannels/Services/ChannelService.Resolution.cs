@@ -340,6 +340,25 @@ public partial class ChannelService
             LoopRotation(),
             channel.InterleaveOrder);
 
+        // Diagnostic: dump the override table and the resolved per-group weight/blockSize/count so a
+        // "weight not respected" report can be checked against actual scheduler input without needing
+        // to inspect the plugin config XML. The override ids come from Channel.EntryOverrides (what
+        // the client persisted); the group entries come from ToEntry (what the scheduler will see).
+        // A mismatch (override id present but no group with that TopLevelItemId, or vice versa) is
+        // the exact bug we're hunting.
+        _logger.LogInformation(
+            "MyChannels: channel '{Name}' resolve — {OverrideCount} overrides ({OverrideDump}); {GroupCount} groups ({GroupDump})",
+            channel.Name,
+            overridesByItemId.Count,
+            string.Join(", ", overridesByItemId.Take(20).Select(kv => kv.Key.ToString("N") + "=w" + (kv.Value.Weight ?? 1) + "b" + (kv.Value.BlockSize ?? 1))),
+            entries.GroupBy(e => e.TopLevelItemId).Count(),
+            string.Join(", ", entries.GroupBy(e => e.TopLevelItemId).Take(20).Select(g =>
+            {
+                var first = g.First();
+                var label = first.SeriesName ?? first.Title ?? "(untitled)";
+                return g.Key.ToString("N") + "[" + label + " w" + first.Weight + "b" + first.BlockSize + "x" + g.Count() + "]";
+            })));
+
         var loop = ProgramLoopBuilder.Build(entries, options);
         return channel.FillerMode == FillerMode.Off ? loop : InjectFillerCards(channel, loop);
     }
